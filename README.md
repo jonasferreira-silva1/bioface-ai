@@ -421,8 +421,8 @@ Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para mais detalh
 ## 👤 Autor
 
 **JONAS FERREIRA DA SILVA**
-- GitHub: [@seu-usuario](https://github.com/seu-usuario)
-- LinkedIn: [Seu Perfil](https://linkedin.com/in/seu-perfil)
+- GitHub: [@seu-usuario](https://github.com/jonasferreira-silva1)
+- LinkedIn: [Seu Perfil](https://www.linkedin.com/in/jonas-silva01/)
 
 ---
 
