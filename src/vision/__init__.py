@@ -11,3 +11,4 @@ from .face_processor import FaceProcessor
 
 __all__ = ["Camera", "FaceDetector", "FaceProcessor"]
 
+

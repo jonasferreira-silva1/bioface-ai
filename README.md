@@ -138,14 +138,37 @@ Sistemas tradicionais de análise comportamental são:
 
 ## 🚀 Instalação
 
-### Pré-requisitos
+### Opção 1: Docker (Recomendado)
+
+A forma mais fácil de executar o BioFace AI é usando Docker:
+
+```bash
+# Build da imagem
+docker build -t bioface-ai .
+
+# Executar
+docker run -it --rm --device=/dev/video0 --memory="1g" bioface-ai
+```
+
+Ou use Docker Compose:
+
+```bash
+# Executa tudo automaticamente
+docker-compose up
+```
+
+> 💡 **Nota**: Esta versão é otimizada para baixo uso de memória (~200-500MB). Não inclui TensorFlow para economizar recursos.
+
+### Opção 2: Instalação Local
+
+#### Pré-requisitos
 
 - Python 3.9 ou superior
 - Webcam conectada
 - 4GB+ RAM recomendado
 - GPU opcional (melhora performance)
 
-### Passo a Passo
+#### Passo a Passo
 
 1. **Clone o repositório**
 ```bash
@@ -191,8 +214,15 @@ cp .env.example .env    # Linux/Mac
 ### Execução Básica
 
 ```bash
+# Versão completa (requer mais memória)
 python main.py
+
+# Versão leve (recomendado para sistemas com pouca RAM)
+pip install -r requirements-light.txt
+python src/main-light.py
 ```
+
+> 💡 **Dica**: Se seu sistema tem pouca memória (< 4GB), use a versão leve! Veja [docs/LIGHT_MODE.md](docs/LIGHT_MODE.md)
 
 ### Modos de Operação
 
@@ -290,9 +320,12 @@ bioface-ai/
 ├── .env                        # Configurações (não versionado)
 ├── .env.example               # Exemplo de configurações
 ├── .gitignore
+├── .dockerignore              # Arquivos ignorados no Docker
 ├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
+├── Dockerfile                 # Dockerfile principal (CPU)
+├── Dockerfile.gpu            # Dockerfile com suporte GPU
+├── docker-compose.yml         # Docker Compose (produção)
+├── docker-compose.dev.yml     # Docker Compose (desenvolvimento)
 └── README.md
 ```
 

@@ -172,3 +172,4 @@ RECOGNITION_MODEL_PATH=models/recognition/facenet.h5
 
 **Dica**: Comece com modelos pequenos para testar, depois migre para modelos maiores conforme necessário.
 
+

@@ -8,3 +8,4 @@ reconhecimento facial e classificação de emoções.
 __version__ = "0.1.0"
 __author__ = "BioFace AI Team"
 
+

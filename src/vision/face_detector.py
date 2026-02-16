@@ -202,3 +202,4 @@ class FaceDetector:
             self.face_mesh.close()
             logger.info("FaceDetector liberado")
 
+

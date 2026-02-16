@@ -171,3 +171,4 @@ Este documento mostra o status atual do projeto e o que foi implementado.
 
 **Última atualização**: 2024
 
+

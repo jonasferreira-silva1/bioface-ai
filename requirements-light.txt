@@ -1,0 +1,24 @@
+# BioFace AI - Versão Leve (Sem TensorFlow)
+# 
+# Esta versão remove TensorFlow e outras dependências pesadas.
+# Ideal para sistemas com pouca memória.
+# 
+# Uso: pip install -r requirements-light.txt
+
+# Visão Computacional (essencial)
+opencv-python-headless==4.8.1.78  # Headless = sem GUI, mais leve
+mediapipe==0.10.21  # Versão compatível com Windows (0.10.7 não disponível)
+numpy>=1.26.0  # Compatível com Python 3.12 (1.24.3 não funciona)
+Pillow>=10.1.0
+
+# Utilitários (mínimos)
+python-dotenv==1.0.0
+loguru==0.7.2
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# NOTA: TensorFlow foi removido para reduzir uso de memória
+# O sistema funcionará apenas com detecção de faces (sem classificação de emoções)
+# Para adicionar emoções depois, instale TensorFlow separadamente ou use modelo mais leve
+
+

@@ -165,3 +165,4 @@ class Camera:
         """Destrutor: garante liberação de recursos"""
         self.release()
 
+
