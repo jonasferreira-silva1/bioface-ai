@@ -17,6 +17,9 @@ loguru==0.7.2
 pydantic==2.5.0
 pydantic-settings==2.1.0
 
+# Banco de dados
+sqlalchemy>=2.0.0
+
 # NOTA: TensorFlow foi removido para reduzir uso de memória
 # O sistema funcionará apenas com detecção de faces (sem classificação de emoções)
 # Para adicionar emoções depois, instale TensorFlow separadamente ou use modelo mais leve

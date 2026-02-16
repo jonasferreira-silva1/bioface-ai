@@ -5,8 +5,14 @@ Contém modelos de Machine Learning para classificação de emoções
 e reconhecimento facial.
 """
 
-from .emotion_classifier import EmotionClassifier
+# Importação opcional do EmotionClassifier (requer TensorFlow)
+try:
+    from .emotion_classifier import EmotionClassifier
+    __all__ = ["EmotionClassifier", "FaceRecognizer"]
+except ImportError:
+    # TensorFlow não instalado (versão leve)
+    EmotionClassifier = None
+    __all__ = ["FaceRecognizer"]
 
-__all__ = ["EmotionClassifier"]
-
-
+# Importação do FaceRecognizer (não requer TensorFlow)
+from .face_recognizer import FaceRecognizer

@@ -64,9 +64,18 @@ class Settings(BaseSettings):
     """Confiança mínima para considerar uma emoção válida (0.0 a 1.0)"""
     
     recognition_distance_threshold: float = float(
-        os.getenv("RECOGNITION_DISTANCE_THRESHOLD", "0.6")
+        os.getenv("RECOGNITION_DISTANCE_THRESHOLD", "0.35")
     )
-    """Distância máxima para considerar faces como a mesma pessoa"""
+    """Distância cosseno máxima para considerar faces como a mesma pessoa (0.0-1.0). 
+    Usa distância cosseno: 0.0 = idêntico, 1.0 = completamente diferente.
+    Valores menores = mais restritivo. Recomendado: 0.25-0.35 para maior precisão"""
+    
+    recognition_ambiguity_threshold: float = float(
+        os.getenv("RECOGNITION_AMBIGUITY_THRESHOLD", "0.03")
+    )
+    """Diferença absoluta mínima entre melhor e segundo melhor match para evitar ambiguidade (0.0-1.0).
+    Também considera diferença relativa (< 20%). Valores menores = mais permissivo.
+    Recomendado: 0.02-0.05"""
     
     # ============================================
     # CONFIGURAÇÕES DE BANCO DE DADOS
