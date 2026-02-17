@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     )
     """Confiança mínima para considerar uma emoção válida (0.0 a 1.0)"""
     
+    emotion_classifier_type: str = os.getenv("EMOTION_CLASSIFIER_TYPE", "light")
+    """
+    Tipo de classificador de emoções a usar:
+    - 'light': EmotionClassifierLight (heurísticas, rápido, menos preciso)
+    - 'deepface': EmotionClassifierDeepFace (deep learning, mais preciso, requer DeepFace)
+    """
+    
     recognition_distance_threshold: float = float(
         os.getenv("RECOGNITION_DISTANCE_THRESHOLD", "0.35")
     )

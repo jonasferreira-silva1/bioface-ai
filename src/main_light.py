@@ -22,6 +22,7 @@ from src.vision.camera import Camera
 from src.vision.face_detector import FaceDetector
 from src.vision.face_processor import FaceProcessor
 from src.ai.face_recognizer import FaceRecognizer
+from src.ai.emotion_classifier_light import EmotionClassifierLight
 from src.database.repository import DatabaseRepository
 
 # Configura logging
@@ -66,6 +67,26 @@ class BioFacePipelineLight:
         self.face_recognizer = FaceRecognizer(embedding_size=128)
         logger.info("✓ Face Recognizer inicializado")
         
+        # Classificação de emoções (Fase 3)
+        # Escolhe classificador baseado na configuração
+        emotion_type = self.settings.emotion_classifier_type.lower()
+        
+        if emotion_type == "deepface":
+            try:
+                from .ai.emotion_classifier_deepface import EmotionClassifierDeepFace
+                self.emotion_classifier = EmotionClassifierDeepFace()
+                logger.info("✓ Emotion Classifier (DeepFace) inicializado")
+            except (ImportError, Exception) as e:
+                logger.warning(
+                    f"DeepFace não disponível ({e}), usando EmotionClassifierLight. "
+                    "Execute: pip install deepface"
+                )
+                self.emotion_classifier = EmotionClassifierLight()
+                logger.info("✓ Emotion Classifier (Light) inicializado")
+        else:
+            self.emotion_classifier = EmotionClassifierLight()
+            logger.info("✓ Emotion Classifier (Light) inicializado")
+        
         # Banco de dados (Fase 2)
         self.db = DatabaseRepository()
         logger.info("✓ Banco de dados inicializado")
@@ -86,9 +107,20 @@ class BioFacePipelineLight:
         self.stable_name = None  # Nome estável atual
         self.stable_confidence = 0.0  # Confiança estável atual
         
+        # Sistema de estabilização temporal para emoções (evita oscilação)
+        self.emotion_history = []  # Histórico das últimas emoções
+        self.emotion_history_size = 6  # Quantos frames manter no histórico de emoções
+        self.emotion_consensus_threshold = 4  # Quantos frames precisam concordar para mudar emoção
+        self.current_stable_emotion = None  # Emoção estável atual
+        self.current_stable_emotion_pt = None  # Emoção estável em português
+        self.current_stable_emotion_confidence = 0.0  # Confiança estável atual
+        self._last_saved_emotion = None  # Última emoção salva (para evitar duplicatas)
+        
         logger.info("=" * 60)
         logger.info("Pipeline leve inicializado!")
-        logger.info("Nota: Esta versão não classifica emoções (sem TensorFlow)")
+        logger.info("✓ Detecção facial: Ativa")
+        logger.info("✓ Reconhecimento facial: Ativo")
+        logger.info("✓ Classificação de emoções: Ativa (versão leve)")
         logger.info("=" * 60)
     
     def process_frame(self, frame):
@@ -106,10 +138,15 @@ class BioFacePipelineLight:
         # Detecta faces
         faces = self.face_detector.detect(frame)
         
+        # Log ocasional para debug
+        if len(faces) == 0 and self.frame_count % 60 == 0:
+            logger.debug("Nenhuma face detectada no frame")
+        
         # Processa cada face detectada (com identificação)
         for face in faces:
             bbox = face['bbox']
             landmarks = face['landmarks_2d']
+            landmarks_3d = face.get('landmarks')  # Landmarks 3D completos (para emoções)
             confidence = face['confidence']
             
             # Gera embedding para identificação
@@ -204,6 +241,40 @@ class BioFacePipelineLight:
             user_name = stable_user_name
             identification_confidence = stable_conf
             
+            # Classifica emoção (Fase 3)
+            emotion = None
+            emotion_pt = None
+            emotion_confidence = 0.0
+            
+            # Processa face para emoção (a cada frame, mas pode otimizar depois)
+            face_processed = self.face_processor.process_for_emotion(frame, bbox)
+            if face_processed is not None:
+                # Passa landmarks 3D para melhorar classificação (especialmente para Angry)
+                emotion, emotion_confidence = self.emotion_classifier.predict(
+                    face_processed, 
+                    landmarks=landmarks_3d
+                )
+                emotion_pt = self.emotion_classifier.get_emotion_pt(emotion)
+                
+                # Adiciona ao histórico de emoções
+                self.emotion_history.append({
+                    'emotion': emotion,
+                    'emotion_pt': emotion_pt,
+                    'confidence': emotion_confidence
+                })
+                
+                # Mantém apenas os últimos N frames
+                if len(self.emotion_history) > self.emotion_history_size:
+                    self.emotion_history.pop(0)
+                
+                # Aplica estabilização temporal de emoções
+                stable_emotion, stable_emotion_pt, stable_emotion_conf = self._stabilize_emotion()
+                
+                # Usa emoção estável
+                emotion = stable_emotion
+                emotion_pt = stable_emotion_pt
+                emotion_confidence = stable_emotion_conf
+            
             result = {
                 'bbox': bbox,
                 'landmarks': landmarks,
@@ -211,18 +282,43 @@ class BioFacePipelineLight:
                 'embedding': embedding.tolist() if embedding is not None else None,
                 'user_id': user_id,
                 'user_name': user_name,
-                'identification_confidence': identification_confidence
+                'identification_confidence': identification_confidence,
+                'emotion': emotion,
+                'emotion_pt': emotion_pt,
+                'emotion_confidence': emotion_confidence
             }
             results.append(result)
         
         # Desenha anotações
         frame_annotated = self._draw_annotations(frame, results)
         
+        # Log ocasional para debug
+        if len(results) > 0 and self.frame_count % 30 == 0:
+            result = results[0]
+            logger.debug(
+                f"Desenhando anotacoes: faces={len(results)}, "
+                f"nome={result.get('user_name')}, "
+                f"emocao={result.get('emotion_pt')}"
+            )
+        
         return frame_annotated, results
     
     def _draw_annotations(self, frame, results):
         """Desenha anotações no frame."""
         frame_copy = frame.copy()
+        
+        # Se não houver resultados, ainda mostra o frame (sem anotações)
+        if not results:
+            # Adiciona mensagem indicando que está aguardando face
+            cv2.putText(
+                frame_copy,
+                "Aguardando face...",
+                (10, 60),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 255, 255),
+                2
+            )
         
         for result in results:
             bbox = result['bbox']
@@ -234,12 +330,20 @@ class BioFacePipelineLight:
             stable_name = result.get('user_name')
             stable_conf = result.get('identification_confidence', 0.0)
             
+            # Emoção detectada
+            emotion_pt = result.get('emotion_pt')
+            emotion_conf = result.get('emotion_confidence', 0.0)
+            
             if stable_name and stable_conf >= self.min_confidence_to_show:
                 text = f"{stable_name}: {stable_conf:.0%}"
                 color = (0, 255, 0)  # Verde para identificado
             else:
                 text = f"DESCONHECIDO: {confidence:.0%}"
                 color = (0, 165, 255)  # Laranja para desconhecido
+            
+            # Adiciona emoção ao texto se detectada
+            if emotion_pt and emotion_conf >= self.emotion_classifier.confidence_threshold:
+                text += f" | {emotion_pt}: {emotion_conf:.0%}"
             
             # Desenha bounding box
             cv2.rectangle(frame_copy, (x, y), (x + w, y + h), color, 2)
@@ -411,15 +515,17 @@ class BioFacePipelineLight:
         if consensus_count >= self.consensus_threshold:
             # Há consenso - pode mudar ou manter
             if best_user_id != self.current_stable_id:
-                # Mudança de identificação - só aceita se houver consenso forte
-                if consensus_count >= self.consensus_threshold:
-                    self.current_stable_id = best_user_id
-                    self.stable_name = best_vote['name']
-                    self.stable_confidence = avg_confidence
-                    logger.info(
-                        f"Mudanca de identificacao: {self.stable_name} "
-                        f"(conf={self.stable_confidence:.2f}, votos={consensus_count})"
-                    )
+                # Mudança de identificação - aceita pois já há consenso suficiente
+                self.current_stable_id = best_user_id
+                self.stable_name = best_vote['name']
+                self.stable_confidence = avg_confidence
+                logger.info(
+                    f"Mudanca de identificacao: {self.stable_name} "
+                    f"(conf={self.stable_confidence:.2f}, votos={consensus_count})"
+                )
+            else:
+                # Mesmo usuário - apenas atualiza confiança
+                self.stable_confidence = avg_confidence
         elif self.current_stable_id is not None:
             # Não há consenso suficiente, mas já temos uma identificação estável
             # Mantém a identificação atual se ainda aparecer no histórico
@@ -457,6 +563,103 @@ class BioFacePipelineLight:
         # Retorna identificação estável
         return self.current_stable_id, self.stable_name, self.stable_confidence
     
+    def _stabilize_emotion(self):
+        """
+        Estabiliza emoção usando histórico temporal.
+        
+        Evita oscilação entre emoções diferentes usando votação por maioria.
+        
+        Returns:
+            tuple: (emotion, emotion_pt, confidence) estáveis
+        """
+        if not self.emotion_history:
+            return None, None, 0.0
+        
+        # Conta votos por emoção no histórico recente
+        votes = {}  # {emotion: {'count': int, 'total_confidence': float}}
+        
+        for entry in self.emotion_history:
+            emo = entry['emotion']
+            conf = entry['confidence']
+            
+            if emo is not None and emo != "Unknown" and conf >= self.emotion_classifier.confidence_threshold:
+                if emo not in votes:
+                    votes[emo] = {
+                        'count': 0,
+                        'total_confidence': 0.0,
+                        'emotion_pt': entry.get('emotion_pt', emo)
+                    }
+                
+                votes[emo]['count'] += 1
+                votes[emo]['total_confidence'] += conf
+        
+        if not votes:
+            # Nenhuma emoção confiável no histórico
+            self.current_stable_emotion = None
+            self.current_stable_emotion_pt = None
+            self.current_stable_emotion_confidence = 0.0
+            return None, None, 0.0
+        
+        # Encontra a emoção com mais votos
+        best_emotion = max(votes.keys(), key=lambda e: (
+            votes[e]['count'],  # Prioriza quem tem mais votos
+            votes[e]['total_confidence'] / votes[e]['count']  # Em caso de empate, maior confiança média
+        ))
+        
+        best_vote = votes[best_emotion]
+        consensus_count = best_vote['count']
+        avg_confidence = best_vote['total_confidence'] / consensus_count
+        
+        # Só muda a emoção se houver consenso suficiente
+        if consensus_count >= self.emotion_consensus_threshold:
+            # Há consenso - pode mudar ou manter
+            if best_emotion != self.current_stable_emotion:
+                # Mudança de emoção - aceita pois já há consenso suficiente
+                self.current_stable_emotion = best_emotion
+                self.current_stable_emotion_pt = best_vote['emotion_pt']
+                self.current_stable_emotion_confidence = avg_confidence
+                logger.debug(
+                    f"Mudanca de emocao: {self.current_stable_emotion_pt} "
+                    f"(conf={self.current_stable_emotion_confidence:.2f}, votos={consensus_count})"
+                )
+            else:
+                # Mesma emoção - apenas atualiza confiança
+                self.current_stable_emotion_confidence = avg_confidence
+        elif self.current_stable_emotion is not None:
+            # Não há consenso suficiente, mas já temos uma emoção estável
+            # Mantém a emoção atual se ainda aparecer no histórico
+            if self.current_stable_emotion in votes:
+                # Ainda aparece no histórico - mantém e atualiza confiança
+                self.current_stable_emotion_confidence = votes[self.current_stable_emotion]['total_confidence'] / votes[self.current_stable_emotion]['count']
+            else:
+                # Não aparece mais no histórico - limpa após alguns frames
+                frames_without_stable = sum(
+                    1 for entry in self.emotion_history
+                    if entry['emotion'] != self.current_stable_emotion
+                )
+                # Só limpa se não aparecer por mais de 50% do histórico
+                if frames_without_stable >= len(self.emotion_history) * 0.5:
+                    logger.debug(
+                        f"Limpando emocao estavel: {self.current_stable_emotion_pt} "
+                        f"(nao aparece ha {frames_without_stable} frames)"
+                    )
+                    self.current_stable_emotion = None
+                    self.current_stable_emotion_pt = None
+                    self.current_stable_emotion_confidence = 0.0
+        else:
+            # Não há emoção estável ainda - espera consenso
+            if consensus_count >= self.emotion_consensus_threshold:
+                self.current_stable_emotion = best_emotion
+                self.current_stable_emotion_pt = best_vote['emotion_pt']
+                self.current_stable_emotion_confidence = avg_confidence
+                logger.debug(
+                    f"Nova emocao: {self.current_stable_emotion_pt} "
+                    f"(conf={self.current_stable_emotion_confidence:.2f}, votos={consensus_count})"
+                )
+        
+        # Retorna emoção estável
+        return self.current_stable_emotion, self.current_stable_emotion_pt, self.current_stable_emotion_confidence
+    
     def update_fps(self):
         """Atualiza cálculo de FPS."""
         self.fps_counter += 1
@@ -480,6 +683,8 @@ class BioFacePipelineLight:
         window_name = "BioFace AI - Light"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window_name, 800, 600)
+        cv2.moveWindow(window_name, 100, 100)  # Move para posição visível
+        cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 0)  # Não fica sempre no topo
         
         try:
             while True:
@@ -488,30 +693,29 @@ class BioFacePipelineLight:
                 if frame is None:
                     continue
                 
-                # Frame skipping
+                # Frame skipping - processa apenas 1 frame a cada N
                 self.skip_counter += 1
-                if self.skip_counter < self.settings.frame_skip:
-                    # Mostra frame sem processar, mas com instruções
-                    frame_with_instructions = frame.copy()
-                    cv2.putText(
-                        frame_with_instructions,
-                        "Pressione 'Q' para fechar",
-                        (10, frame_with_instructions.shape[0] - 20),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.7,
-                        (0, 255, 0),
-                        2
-                    )
-                    cv2.imshow(window_name, frame_with_instructions)
-                    if cv2.waitKey(1) & 0xFF in [ord('q'), ord('Q')]:
-                        break
-                    continue
+                should_process = (self.skip_counter >= self.settings.frame_skip)
                 
-                self.skip_counter = 0
-                self.frame_count += 1
+                if should_process:
+                    self.skip_counter = 0
+                    self.frame_count += 1
+                    
+                    # Processa frame
+                    frame_annotated, results = self.process_frame(frame)
+                else:
+                    # Não processa, mas usa o último frame processado (se existir)
+                    if hasattr(self, '_last_annotated_frame'):
+                        frame_annotated = self._last_annotated_frame
+                        results = getattr(self, '_last_results', [])
+                    else:
+                        # Primeira vez - processa mesmo assim
+                        self.frame_count += 1
+                        frame_annotated, results = self.process_frame(frame)
                 
-                # Processa frame
-                frame_annotated, results = self.process_frame(frame)
+                # Salva frame processado para usar nos frames skipped
+                self._last_annotated_frame = frame_annotated
+                self._last_results = results
                 
                 # Log e salva no banco (a cada 30 frames)
                 if self.frame_count % 30 == 0:
@@ -534,6 +738,35 @@ class BioFacePipelineLight:
                             except Exception as e:
                                 logger.debug(f"Erro ao atualizar embedding: {e}")
                         
+                        # Salva emoção detectada (Fase 3) - apenas a emoção estável
+                        # Salva apenas se a emoção estável mudou ou a cada 60 frames (evita spam)
+                        stable_emotion = result.get('emotion')
+                        stable_emotion_conf = result.get('emotion_confidence', 0.0)
+                        
+                        if (stable_emotion and 
+                            stable_emotion != "Unknown" and 
+                            stable_emotion_conf >= self.emotion_classifier.confidence_threshold and
+                            (self.frame_count % 60 == 0 or  # Salva a cada 60 frames
+                             stable_emotion != getattr(self, '_last_saved_emotion', None))):  # Ou se mudou
+                            try:
+                                self.db.save_emotion(
+                                    user_id=result.get('user_id'),
+                                    emotion=stable_emotion,
+                                    confidence=stable_emotion_conf,
+                                    frame_number=self.frame_count,
+                                    extra_data={
+                                        'bbox': result['bbox'],
+                                        'landmarks_count': len(result.get('landmarks', []))
+                                    }
+                                )
+                                self._last_saved_emotion = stable_emotion  # Marca como salva
+                                logger.debug(
+                                    f"  -> Emoção registrada: {result.get('emotion_pt', stable_emotion)} "
+                                    f"({stable_emotion_conf:.2%})"
+                                )
+                            except Exception as e:
+                                logger.debug(f"Erro ao salvar emoção: {e}")
+                        
                         # NÃO cria usuários anônimos automaticamente (desabilitado)
                         # Isso estava criando muitos usuários e interferindo na identificação
                 
@@ -541,10 +774,23 @@ class BioFacePipelineLight:
                 self.update_fps()
                 
                 # Exibe frame com anotações
+                # Garante que a janela está visível e redimensionada
+                cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+                
+                # Log ocasional para debug
+                if self.frame_count % 60 == 0:
+                    logger.debug(
+                        f"Exibindo frame {self.frame_count}: "
+                        f"shape={frame_annotated.shape}, "
+                        f"faces={len(results)}"
+                    )
+                
                 cv2.imshow(window_name, frame_annotated)
                 
-                # Verifica tecla 'q' ou 'Q' para sair (waitKey também atualiza a janela)
-                # IMPORTANTE: Clique na janela de vídeo antes de pressionar 'Q'
+                # Força atualização da janela (importante para Windows)
+                cv2.waitKey(1)
+                
+                # Verifica tecla 'q' ou 'Q' para sair
                 key = cv2.waitKey(1) & 0xFF
                 if key in [ord('q'), ord('Q'), 27]:  # 'q', 'Q' ou ESC
                     logger.info("Saindo...")
