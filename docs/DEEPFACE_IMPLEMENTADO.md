@@ -1,4 +1,6 @@
-# 🎭 DeepFace Implementado - Classificação de Emoções Melhorada
+# 🎭 DeepFace - Classificação de Emoções
+
+**Nota:** Este documento descreve a implementação do DeepFace. Para uso, veja [USAGE.md](USAGE.md).
 
 **Data:** 2026-02-17  
 **Status:** ✅ Implementado

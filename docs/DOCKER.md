@@ -143,6 +143,30 @@ docker run -it --rm \
   bioface-ai
 ```
 
+## 🪟 Windows - Limitações
+
+### ⚠️ Câmera no Windows
+
+**Docker no Windows NÃO consegue acessar a câmera** porque:
+- Docker roda em VM/WSL2 (sem acesso direto ao hardware)
+- `/dev/video0` não existe no Windows (é um caminho Linux)
+- Câmera está no host (container não vê dispositivos USB)
+
+**Solução Recomendada:**
+```bash
+# Execute diretamente no Windows (funciona perfeitamente!)
+python main-light.py
+```
+
+**Alternativas:**
+- Use arquivo de vídeo em vez de câmera
+- Configure WSL2 + Docker Desktop (avançado)
+- Use servidor de streaming
+
+Para desenvolvimento no Windows, **use execução direta** em vez de Docker.
+
+---
+
 ## 🐛 Solução de Problemas
 
 ### Erro: "Cannot find /dev/video0"
