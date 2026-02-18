@@ -115,6 +115,8 @@ Nosso objetivo é construir uma **solução completa e profissional** que:
 
 ## 🎯 Visão Geral
 
+**🏗️ Arquitetura baseada em microsserviços com API FastAPI + Dashboard Streamlit, containerizados com Docker e orquestrados via Docker Compose.**
+
 O **BioFace AI** é um sistema completo de reconhecimento facial que combina:
 
 - ✅ **Detecção facial em tempo real** usando MediaPipe
@@ -123,6 +125,9 @@ O **BioFace AI** é um sistema completo de reconhecimento facial que combina:
 - ✅ **Banco de dados SQLite** para armazenamento
 - ✅ **Interface visual** em tempo real
 - ✅ **Scripts de gerenciamento** para cadastro e consulta
+- ✅ **API REST FastAPI** com documentação automática (Swagger)
+- ✅ **Dashboard Streamlit** para visualização e gerenciamento
+- ✅ **Arquitetura baseada em microsserviços** com API FastAPI + Dashboard Streamlit, containerizados com Docker e orquestrados via Docker Compose
 
 ---
 
@@ -145,6 +150,13 @@ O **BioFace AI** é um sistema completo de reconhecimento facial que combina:
 - Limpeza de embeddings órfãos
 - Diagnóstico de problemas
 
+### API e Dashboard
+- **API REST FastAPI** com endpoints para usuários, emoções e estatísticas
+- **WebSocket** para streaming em tempo real de detecções e emoções
+- **Dashboard Streamlit** com visualizações interativas
+- **Documentação automática** (Swagger/OpenAPI) em `/docs`
+- **Arquitetura híbrida**: Pipeline no host, API/Dashboard em Docker
+
 ---
 
 ## 🚀 Instalação Rápida
@@ -154,8 +166,9 @@ O **BioFace AI** é um sistema completo de reconhecimento facial que combina:
 - Python 3.9+
 - Webcam conectada
 - 4GB+ RAM (8GB recomendado)
+- Docker (opcional, para API e Dashboard)
 
-### Passo a Passo
+### Modo Standalone (Recomendado para Windows)
 
 ```bash
 # 1. Clone o repositório
@@ -170,9 +183,35 @@ venv\Scripts\activate  # Windows
 # 3. Instale dependências
 pip install -r requirements.txt
 
-# 4. Execute
+# 4. Execute pipeline
 python main-light.py
 ```
+
+### Modo Híbrido (API + Dashboard em Docker)
+
+**Terminal 1: Inicia serviços Docker**
+```bash
+docker-compose -f docker-compose.services.yml up
+```
+
+**Terminal 2: Inicia pipeline conectado à API**
+```bash
+python main-light.py --api-url http://localhost:8000
+```
+
+**Acesse:**
+- API: http://localhost:8000/docs
+- Dashboard: http://localhost:8501
+
+> **📝 Arquitetura de Microsserviços:** O BioFace AI utiliza uma **arquitetura baseada em microsserviços** com API FastAPI + Dashboard Streamlit, containerizados com Docker e orquestrados via Docker Compose.
+>
+> **Características da arquitetura:**
+> - **Modo API/Dashboard**: 100% Dockerizado para fácil deploy e escalabilidade
+> - **Modo Processamento (Edge)**: Recomenda-se execução nativa (Python direto no host) para acesso direto à câmera, garantindo a menor latência possível no processamento de frames
+> - **Comunicação**: HTTP REST e WebSocket para streaming em tempo real
+> - **Orquestração**: Docker Compose para gerenciamento simplificado dos serviços
+>
+> Esta arquitetura funciona perfeitamente no Windows, onde Docker não acessa câmera diretamente. Veja [docs/ARQUITETURA_HIBRIDA.md](docs/ARQUITETURA_HIBRIDA.md) para detalhes.
 
 **⚠️ Importante:** O sistema requer **NumPy < 2.0** e **protobuf < 5.0**. Se houver conflitos, consulte [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
@@ -242,11 +281,13 @@ Toda a documentação está na pasta [`docs/`](docs/):
 - [x] Integração com DeepFace (opcional)
 - [x] Estabilização de emoções
 
-### 🔄 Fase 4 - Backend + Dashboard (PLANEJADO)
-- [ ] API FastAPI
-- [ ] WebSocket para tempo real
-- [ ] Dashboard Streamlit
-- [ ] Visualizações
+### ✅ Fase 4 - Backend + Dashboard (COMPLETA)
+- [x] API FastAPI com endpoints REST
+- [x] WebSocket para tempo real
+- [x] Dashboard Streamlit
+- [x] Visualizações e estatísticas
+- [x] Arquitetura híbrida (Docker + Host)
+- [x] Documentação automática (Swagger)
 
 ### 🔮 Futuro
 - [ ] Multi-face tracking
@@ -272,9 +313,20 @@ Veja [docs/STATUS.md](docs/STATUS.md) para detalhes completos.
 - **SQLite**: Banco de dados leve
 - **SQLAlchemy**: ORM
 
+### Backend e API
+- **FastAPI**: Framework web moderno e rápido
+- **WebSockets**: Streaming em tempo real
+- **Pydantic**: Validação de dados e configurações
+- **Uvicorn**: Servidor ASGI de alta performance
+
+### Dashboard
+- **Streamlit**: Framework para dashboards interativos
+- **HTTPX**: Cliente HTTP assíncrono
+
 ### Utilitários
 - **Loguru**: Sistema de logging
-- **Pydantic**: Validação de configurações
+- **Docker**: Containerização de serviços
+- **Docker Compose**: Orquestração de containers
 
 ---
 
@@ -287,6 +339,11 @@ bioface-ai/
 │   ├── vision/                # Visão computacional
 │   ├── ai/                    # IA (reconhecimento + emoções)
 │   ├── database/              # Banco de dados
+│   ├── api/                   # API FastAPI
+│   │   ├── main.py            # Aplicação FastAPI
+│   │   ├── routes/            # Rotas da API
+│   │   ├── websocket_manager.py
+│   │   └── client.py          # Cliente HTTP/WebSocket
 │   ├── exceptions.py          # Exceções customizadas
 │   └── utils/                 # Utilitários
 ├── tests/                     # Testes unitários e de integração
@@ -296,7 +353,14 @@ bioface-ai/
 │   └── test_face_recognizer_exceptions.py
 ├── scripts/                   # Scripts de gerenciamento
 ├── docs/                      # Documentação completa
-├── requirements.txt           # Dependências
+├── dashboard.py               # Dashboard Streamlit
+├── run_api.py                 # Script para rodar API
+├── docker-compose.services.yml # Docker Compose (serviços)
+├── Dockerfile.api             # Container da API
+├── Dockerfile.dashboard       # Container do Dashboard
+├── requirements.txt           # Dependências principais
+├── requirements-api.txt       # Dependências da API
+├── requirements-dashboard.txt # Dependências do Dashboard
 ├── pytest.ini                 # Configuração do Pytest
 └── README.md                  # Este arquivo
 ```
@@ -422,36 +486,41 @@ except DatabaseCorruptedError:
 
 ---
 
-#### 3. 🌐 API REST e Dashboard (Fase 4) ⏳ **TRANSFORMA EM PRODUTO**
+#### 3. 🌐 API REST e Dashboard (Fase 4) ✅ **IMPLEMENTADO**
 
-**Status:** Planejado - **Próxima grande fase**
+**Status:** ✅ **Implementado** - Sistema completo de API e Dashboard
 
-**Por que é crítico:** Transforma o projeto de "script Python" para **"produto completo"**, demonstrando habilidades fullstack que recrutadores valorizam.
-
-**O que será implementado:**
+**O que foi implementado:**
 
 **API FastAPI:**
-- [ ] `GET /api/users` - Listar usuários cadastrados
-- [ ] `POST /api/users` - Cadastrar novo usuário
-- [ ] `GET /api/users/{id}` - Detalhes do usuário
-- [ ] `GET /api/users/{id}/emotions` - Histórico de emoções
-- [ ] `GET /api/stats` - Estatísticas e métricas
-- [ ] `GET /api/health` - Health check do sistema
-- [ ] Documentação automática (Swagger/OpenAPI)
+- ✅ `GET /api/users` - Listar usuários cadastrados
+- ✅ `POST /api/users` - Cadastrar novo usuário
+- ✅ `GET /api/users/{id}` - Detalhes do usuário
+- ✅ `DELETE /api/users/{id}` - Deletar usuário
+- ✅ `GET /api/emotions` - Histórico de emoções
+- ✅ `GET /api/stats` - Estatísticas e métricas
+- ✅ `GET /api/health` - Health check do sistema
+- ✅ Documentação automática (Swagger/OpenAPI) em `/docs`
 
 **WebSocket para Tempo Real:**
-- [ ] `/ws/detections` - Streaming de detecções em tempo real
-- [ ] `/ws/emotions` - Streaming de emoções
-- [ ] Notificações de eventos (nova identificação, mudança de emoção)
+- ✅ `/ws/detections` - Streaming de detecções em tempo real
+- ✅ `/ws/emotions` - Streaming de emoções
+- ✅ Notificações de eventos (nova identificação, mudança de emoção)
 
-**Dashboard:**
-- [ ] Interface Streamlit ou React
-- [ ] Visualização em tempo real
-- [ ] Gráficos de emoções ao longo do tempo
-- [ ] Estatísticas e analytics
-- [ ] Gerenciamento de usuários via interface
+**Dashboard Streamlit:**
+- ✅ Interface interativa para visualização
+- ✅ Visualização em tempo real de detecções
+- ✅ Gráficos de emoções ao longo do tempo
+- ✅ Estatísticas e analytics
+- ✅ Gerenciamento de usuários via interface
 
-**Impacto esperado:** Projeto entra no **top 5%** dos candidatos com habilidades fullstack.
+**Arquitetura:**
+- ✅ **Arquitetura baseada em microsserviços** com API FastAPI + Dashboard Streamlit
+- ✅ Containerizados com Docker e orquestrados via Docker Compose
+- ✅ Arquitetura híbrida: Pipeline no host, serviços em containers
+- ✅ Comunicação via HTTP REST e WebSocket
+
+**Impacto:** ✅ Projeto agora demonstra habilidades fullstack completas!
 
 ---
 
@@ -500,10 +569,11 @@ Para tornar o projeto **production-ready** e impressionar recrutadores técnicos
    - Health checks e monitoramento
 
 #### Prioridade Média (Transforma em Produto)
-3. **API e Dashboard** ⏳
+3. **API e Dashboard** ✅ **IMPLEMENTADO**
    - FastAPI com endpoints REST
    - WebSocket para tempo real
    - Dashboard profissional
+   - Arquitetura de microsserviços com Docker
 
 4. **Métricas Documentadas** 📊
    - Benchmarks automatizados

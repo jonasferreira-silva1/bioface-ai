@@ -1,0 +1,44 @@
+# BioFace AI - Dockerfile para Dashboard
+# 
+# Container apenas para Dashboard Streamlit
+# 
+# Build:
+#   docker build -f Dockerfile.dashboard -t bioface-dashboard .
+
+FROM python:3.11-slim
+
+LABEL maintainer="BioFace AI Team"
+LABEL description="BioFace AI - Dashboard Streamlit"
+LABEL version="1.0.0"
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Instala dependências mínimas
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copia requirements do dashboard
+COPY requirements-dashboard.txt .
+
+# Instala dependências Python
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements-dashboard.txt
+
+# Copia dashboard
+COPY dashboard.py /app/
+
+RUN useradd -m -u 1000 bioface && \
+    chown -R bioface:bioface /app
+
+USER bioface
+
+EXPOSE 8501
+
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+
+CMD ["streamlit", "run", "dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
+

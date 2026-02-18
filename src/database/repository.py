@@ -5,7 +5,7 @@ Gerencia acesso e operações no banco de dados.
 """
 
 from typing import Optional, List, Dict
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, text, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 import numpy as np
@@ -52,7 +52,7 @@ class DatabaseRepository:
             
             # Testa conexão
             with self.engine.connect() as conn:
-                conn.execute(func.select(1))
+                conn.execute(select(1))
             
             # Cria tabelas se não existirem
             Base.metadata.create_all(bind=self.engine)
@@ -132,6 +132,55 @@ class DatabaseRepository:
         session = self.get_session()
         try:
             return session.query(User).filter(User.is_active == True).all()
+        finally:
+            session.close()
+    
+    def list_users(self, include_inactive: bool = False) -> List[User]:
+        """
+        Lista usuários com opção de incluir inativos.
+        
+        Args:
+            include_inactive: Se True, inclui usuários inativos
+            
+        Returns:
+            Lista de usuários
+        """
+        session = self.get_session()
+        try:
+            query = session.query(User)
+            if not include_inactive:
+                query = query.filter(User.is_active == True)
+            return query.all()
+        finally:
+            session.close()
+    
+    def delete_user(self, user_id: int) -> bool:
+        """
+        Deleta um usuário e todos os seus embeddings relacionados.
+        
+        Args:
+            user_id: ID do usuário a deletar
+            
+        Returns:
+            True se deletado com sucesso, False se não encontrado
+        """
+        session = self.get_session()
+        try:
+            user = session.query(User).filter(User.id == user_id).first()
+            if user is None:
+                logger.warning(f"Tentativa de deletar usuário inexistente: id={user_id}")
+                return False
+            
+            # O cascade="all, delete-orphan" no modelo User garante que
+            # os embeddings relacionados serão deletados automaticamente
+            session.delete(user)
+            session.commit()
+            logger.info(f"Usuário deletado: id={user_id}, name={user.name}")
+            return True
+        except SQLAlchemyError as e:
+            session.rollback()
+            logger.error(f"Erro ao deletar usuário {user_id}: {e}")
+            raise
         finally:
             session.close()
     
@@ -528,6 +577,43 @@ class DatabaseRepository:
             session.rollback()
             logger.error(f"Erro ao registrar evento: {e}")
             raise
+        finally:
+            session.close()
+    
+    # ============================================
+    # CONTAGEM E ESTATÍSTICAS
+    # ============================================
+    
+    def count_embeddings(self, user_id: int) -> int:
+        """
+        Conta embeddings de um usuário específico.
+        
+        Args:
+            user_id: ID do usuário
+            
+        Returns:
+            int: Número de embeddings
+        """
+        session = self.get_session()
+        try:
+            count = session.query(FaceEmbedding).filter(
+                FaceEmbedding.user_id == user_id
+            ).count()
+            return count
+        finally:
+            session.close()
+    
+    def count_all_embeddings(self) -> int:
+        """
+        Conta total de embeddings no sistema.
+        
+        Returns:
+            int: Número total de embeddings
+        """
+        session = self.get_session()
+        try:
+            count = session.query(FaceEmbedding).count()
+            return count
         finally:
             session.close()
     

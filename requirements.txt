@@ -38,8 +38,9 @@ pytest-asyncio==0.21.1
 pytest-cov==4.1.0  # Cobertura de código
 pytest-mock==3.12.0  # Mocks para testes
 
-# Dashboard (para fases futuras)
+# Dashboard
 streamlit==1.28.2
 plotly==5.18.0
+requests==2.31.0  # Para dashboard fazer requisições à API
 
 

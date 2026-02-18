@@ -1,0 +1,59 @@
+# BioFace AI - Docker Compose (Serviços)
+#
+# Arquitetura Híbrida:
+# - API e Dashboard rodam em containers Docker
+# - Pipeline de câmera roda nativamente no host (Windows/Linux)
+# - Comunicação via HTTP/WebSocket
+#
+# Uso:
+#   docker-compose -f docker-compose.services.yml up
+
+version: '3.8'
+
+services:
+  # API FastAPI
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: bioface-api
+    image: bioface-api:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./bioface.db
+      - LOG_LEVEL=INFO
+      - CORS_ORIGINS=*
+    volumes:
+      - ./bioface.db:/app/bioface.db
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - bioface-network
+
+  # Dashboard Streamlit
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: bioface-dashboard
+    image: bioface-dashboard:latest
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - bioface-network
+
+networks:
+  bioface-network:
+    driver: bridge
+

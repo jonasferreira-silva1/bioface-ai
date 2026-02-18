@@ -132,6 +132,10 @@ class Settings(BaseSettings):
         """Configuração do Pydantic"""
         case_sensitive = False
         env_file = ".env"
+        
+        # API (opcional)
+        api_url: Optional[str] = os.getenv("API_URL", None)
+        """URL da API para enviar dados (ex: http://localhost:8000). Se None, roda standalone."""
 
 
 # Instância global de configurações

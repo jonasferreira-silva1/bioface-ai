@@ -12,6 +12,9 @@ import time
 import argparse
 from pathlib import Path
 import sys
+from typing import Optional
+import asyncio
+from datetime import datetime
 
 # Adiciona diretório raiz ao path para imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -48,14 +51,43 @@ class BioFacePipelineLight:
     Muito mais leve em memória (~200-500MB vs 2-4GB).
     """
     
-    def __init__(self):
-        """Inicializa o pipeline leve."""
+    def __init__(self, api_url: Optional[str] = None):
+        """
+        Inicializa o pipeline leve.
+        
+        Args:
+            api_url: URL da API para enviar dados (opcional). Se None, roda standalone.
+        """
         logger.info("=" * 60)
         logger.info("Inicializando BioFace AI - Versão Leve")
         logger.info("=" * 60)
         
         # Salva settings como atributo da classe
         self.settings = get_settings()
+        
+        # Cliente da API (opcional)
+        self.api_client = None
+        self.api_url = api_url or getattr(self.settings, 'api_url', None)
+        self.api_loop = None
+        if self.api_url:
+            try:
+                from src.api.client import APIClient
+                self.api_client = APIClient(self.api_url)
+                
+                # Verifica se API está disponível
+                if self.api_client.health_check():
+                    logger.info(f"✓ Cliente da API configurado: {self.api_url}")
+                    logger.info("✓ API está online e acessível")
+                else:
+                    logger.warning(f"API configurada mas não está acessível: {self.api_url}")
+                    logger.warning("Pipeline continuará em modo standalone")
+                    self.api_client = None
+            except ImportError:
+                logger.warning("Cliente da API não disponível (websockets não instalado?)")
+                self.api_client = None
+            except Exception as e:
+                logger.warning(f"Erro ao configurar cliente da API: {e}")
+                self.api_client = None
         
         # Inicializa componentes (sem EmotionClassifier)
         logger.info("Inicializando componentes...")
@@ -687,6 +719,18 @@ class BioFacePipelineLight:
         logger.info("Pressione 'q' ou 'Q' na janela para sair")
         logger.info("OU pressione Ctrl+C no terminal para sair")
         
+        # Inicializa loop assíncrono para API (se necessário)
+        if self.api_client:
+            try:
+                self.api_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(self.api_loop)
+                # Conecta WebSocket em background
+                self.api_loop.run_until_complete(self.api_client.connect_websocket("detections"))
+                logger.info("✓ WebSocket conectado para envio de detecções")
+            except Exception as e:
+                logger.warning(f"Falha ao conectar WebSocket: {e}")
+                self.api_client = None
+        
         settings = get_settings()
         
         # Cria janela e garante que está visível
@@ -745,6 +789,27 @@ class BioFacePipelineLight:
                         result = results[0]
                         logger.info(f"  -> Face detectada com confiança: {result['confidence']:.0%}")
                         
+                        # Envia detecção para API (se conectado)
+                        if self.api_client and self.api_loop:
+                            try:
+                                detection_data = {
+                                    "user_id": result.get('user_id'),
+                                    "user_name": result.get('user_name'),
+                                    "emotion": result.get('emotion'),
+                                    "emotion_confidence": result.get('emotion_confidence', 0.0),
+                                    "confidence": result['confidence'],
+                                    "bbox": result['bbox'],
+                                    "frame_number": self.frame_count,
+                                    "timestamp": datetime.utcnow().isoformat()
+                                }
+                                # Envia de forma não bloqueante
+                                asyncio.run_coroutine_threadsafe(
+                                    self.api_client.send_detection(detection_data),
+                                    self.api_loop
+                                )
+                            except Exception as e:
+                                logger.debug(f"Erro ao enviar detecção para API: {e}")
+                        
                         # Atualiza identificação se encontrou match (salva novo embedding)
                         if result.get('user_id') and result.get('embedding'):
                             # Salva novo embedding para melhorar identificação futura
@@ -794,6 +859,24 @@ class BioFacePipelineLight:
                                     f"  -> Emoção registrada: {result.get('emotion_pt', stable_emotion)} "
                                     f"({stable_emotion_conf:.2%})"
                                 )
+                                
+                                # Envia emoção para API (se conectado)
+                                if self.api_client and self.api_loop:
+                                    try:
+                                        emotion_data = {
+                                            "user_id": result.get('user_id'),
+                                            "emotion": stable_emotion,
+                                            "confidence": stable_emotion_conf,
+                                            "timestamp": datetime.utcnow().isoformat(),
+                                            "frame_number": self.frame_count
+                                        }
+                                        # Envia de forma não bloqueante
+                                        asyncio.run_coroutine_threadsafe(
+                                            self.api_client.send_emotion(emotion_data),
+                                            self.api_loop
+                                        )
+                                    except Exception as e:
+                                        logger.debug(f"Erro ao enviar emoção para API: {e}")
                             except (DatabaseLockedError, DatabaseCorruptedError) as e:
                                 logger.error(f"Erro crítico no banco ao salvar emoção: {e.message}")
                                 # Tenta recuperar se corrompido
@@ -846,6 +929,15 @@ class BioFacePipelineLight:
         """Libera recursos."""
         logger.info("Limpando recursos...")
         
+        # Desconecta WebSocket se conectado
+        if hasattr(self, 'api_client') and self.api_client and hasattr(self, 'api_loop') and self.api_loop:
+            try:
+                self.api_loop.run_until_complete(self.api_client.disconnect_websocket())
+                self.api_loop.close()
+                logger.info("WebSocket desconectado")
+            except Exception as e:
+                logger.debug(f"Erro ao desconectar WebSocket: {e}")
+        
         if hasattr(self, 'camera'):
             self.camera.release()
         
@@ -880,13 +972,20 @@ def main():
         help='Nível de logging'
     )
     
+    parser.add_argument(
+        '--api-url',
+        type=str,
+        default=None,
+        help='URL da API para enviar dados (ex: http://localhost:8000). Se não fornecido, roda standalone.'
+    )
+    
     args = parser.parse_args()
     
     if args.log_level:
         setup_logger(log_level=args.log_level)
     
     try:
-        pipeline = BioFacePipelineLight()
+        pipeline = BioFacePipelineLight(api_url=args.api_url)
         pipeline.run()
     except (CameraNotOpenedError, DatabaseConnectionError) as e:
         logger.error(f"Erro crítico de inicialização: {e.message}")

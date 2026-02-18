@@ -166,14 +166,14 @@ class FaceRecognizer:
 
             return embedding.astype(np.float32)
 
-            except FaceNotDetectedError:
-                raise  # Re-lança exceção específica
-            except Exception as e:
-                logger.error(f"Erro ao gerar embedding: {e}")
-                raise EmbeddingGenerationError(
-                    f"Falha ao gerar embedding: {e}",
-                    {"error_type": type(e).__name__}
-                )
+        except FaceNotDetectedError:
+            raise  # Re-lança exceção específica
+        except Exception as e:
+            logger.error(f"Erro ao gerar embedding: {e}")
+            raise EmbeddingGenerationError(
+                f"Falha ao gerar embedding: {e}",
+                {"error_type": type(e).__name__}
+            )
 
     def generate_embedding_from_bbox(
         self,

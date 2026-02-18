@@ -1,0 +1,53 @@
+# BioFace AI - Dockerfile para API
+# 
+# Container apenas para API FastAPI (sem câmera)
+# 
+# Build:
+#   docker build -f Dockerfile.api -t bioface-api .
+#
+# Run:
+#   docker run -it --rm -p 8000:8000 bioface-api
+
+FROM python:3.11-slim
+
+LABEL maintainer="BioFace AI Team"
+LABEL description="BioFace AI - API FastAPI"
+LABEL version="1.0.0"
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Instala dependências do sistema (mínimas, sem OpenGL/câmera)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copia requirements (sem OpenCV para câmera)
+COPY requirements-api.txt .
+
+# Instala dependências Python
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements-api.txt
+
+# Copia código da API
+COPY src/api/ /app/src/api/
+COPY src/database/ /app/src/database/
+COPY src/utils/ /app/src/utils/
+COPY src/exceptions.py /app/src/
+COPY run_api.py /app/
+
+# Cria diretórios
+RUN mkdir -p /app/logs && \
+    useradd -m -u 1000 bioface && \
+    chown -R bioface:bioface /app
+
+USER bioface
+
+EXPOSE 8000
+
+CMD ["python", "run_api.py"]
+
