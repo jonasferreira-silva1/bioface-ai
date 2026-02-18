@@ -24,6 +24,16 @@ from src.vision.face_processor import FaceProcessor
 from src.ai.face_recognizer import FaceRecognizer
 from src.ai.emotion_classifier_light import EmotionClassifierLight
 from src.database.repository import DatabaseRepository
+from src.exceptions import (
+    CameraNotOpenedError,
+    CameraDisconnectedError,
+    CameraReadError,
+    DatabaseConnectionError,
+    DatabaseCorruptedError,
+    DatabaseLockedError,
+    EmbeddingGenerationError,
+    FaceNotDetectedError
+)
 
 # Configura logging
 setup_logger()
@@ -688,7 +698,18 @@ class BioFacePipelineLight:
         
         try:
             while True:
-                frame = self.camera.read()
+                try:
+                    frame = self.camera.read()
+                except CameraDisconnectedError as e:
+                    logger.warning(f"{e.message}, tentando reconectar...")
+                    if self.camera.reconnect(max_retries=3):
+                        continue
+                    else:
+                        logger.error("Não foi possível reconectar à câmera. Encerrando...")
+                        break
+                except CameraReadError as e:
+                    logger.warning(f"{e.message}, pulando frame...")
+                    continue
                 
                 if frame is None:
                     continue
@@ -735,6 +756,15 @@ class BioFacePipelineLight:
                                     face_size=result['bbox'][2] * result['bbox'][3]
                                 )
                                 logger.debug(f"  -> Embedding atualizado para usuario {result['user_id']}")
+                            except (DatabaseLockedError, DatabaseCorruptedError) as e:
+                                logger.error(f"Erro crítico no banco ao salvar embedding: {e.message}")
+                                # Tenta recuperar se corrompido
+                                if isinstance(e, DatabaseCorruptedError):
+                                    try:
+                                        self.db.recover_from_backup()
+                                        logger.info("Banco recuperado, tentando novamente...")
+                                    except Exception as recover_error:
+                                        logger.error(f"Falha ao recuperar banco: {recover_error}")
                             except Exception as e:
                                 logger.debug(f"Erro ao atualizar embedding: {e}")
                         
@@ -764,6 +794,15 @@ class BioFacePipelineLight:
                                     f"  -> Emoção registrada: {result.get('emotion_pt', stable_emotion)} "
                                     f"({stable_emotion_conf:.2%})"
                                 )
+                            except (DatabaseLockedError, DatabaseCorruptedError) as e:
+                                logger.error(f"Erro crítico no banco ao salvar emoção: {e.message}")
+                                # Tenta recuperar se corrompido
+                                if isinstance(e, DatabaseCorruptedError):
+                                    try:
+                                        self.db.recover_from_backup()
+                                        logger.info("Banco recuperado, tentando novamente...")
+                                    except Exception as recover_error:
+                                        logger.error(f"Falha ao recuperar banco: {recover_error}")
                             except Exception as e:
                                 logger.debug(f"Erro ao salvar emoção: {e}")
                         
@@ -849,6 +888,10 @@ def main():
     try:
         pipeline = BioFacePipelineLight()
         pipeline.run()
+    except (CameraNotOpenedError, DatabaseConnectionError) as e:
+        logger.error(f"Erro crítico de inicialização: {e.message}")
+        logger.error("Verifique se a câmera está conectada e o banco de dados está acessível")
+        return 1
     except Exception as e:
         logger.error(f"Erro fatal: {e}", exc_info=True)
         return 1

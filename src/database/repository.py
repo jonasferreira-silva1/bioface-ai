@@ -7,14 +7,20 @@ Gerencia acesso e operações no banco de dados.
 from typing import Optional, List, Dict
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, OperationalError
 import numpy as np
 from datetime import datetime, timedelta
+import sqlite3
 
 from .models import Base, User, FaceEmbedding, EmotionLog, EventLog
 from ..utils.logger import get_logger
 from ..utils.config import get_settings
-from ..utils.config import get_settings
+from ..exceptions import (
+    DatabaseConnectionError,
+    DatabaseCorruptedError,
+    DatabaseLockedError,
+    handle_database_error
+)
 
 logger = get_logger(__name__)
 
@@ -37,20 +43,52 @@ class DatabaseRepository:
         self.database_url = database_url or settings.database_url
         
         # Cria engine e sessão
-        self.engine = create_engine(
-            self.database_url,
-            connect_args={"check_same_thread": False} if "sqlite" in self.database_url else {}
-        )
-        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
-        
-        # Cria tabelas se não existirem
-        Base.metadata.create_all(bind=self.engine)
-        
-        logger.info(f"Banco de dados inicializado: {self.database_url}")
+        try:
+            self.engine = create_engine(
+                self.database_url,
+                connect_args={"check_same_thread": False} if "sqlite" in self.database_url else {}
+            )
+            self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+            
+            # Testa conexão
+            with self.engine.connect() as conn:
+                conn.execute(func.select(1))
+            
+            # Cria tabelas se não existirem
+            Base.metadata.create_all(bind=self.engine)
+            
+            logger.info(f"Banco de dados inicializado: {self.database_url}")
+        except sqlite3.OperationalError as e:
+            error_str = str(e).lower()
+            if "locked" in error_str:
+                raise DatabaseLockedError(self.database_url)
+            elif "corrupt" in error_str or "malformed" in error_str:
+                raise DatabaseCorruptedError(self.database_url)
+            else:
+                raise handle_database_error(e, self.database_url)
+        except Exception as e:
+            raise handle_database_error(e, self.database_url)
     
     def get_session(self) -> Session:
-        """Retorna uma nova sessão do banco."""
-        return self.SessionLocal()
+        """
+        Retorna uma nova sessão do banco.
+        
+        Raises:
+            DatabaseConnectionError: Se não conseguir conectar
+            DatabaseLockedError: Se o banco estiver bloqueado
+        """
+        try:
+            return self.SessionLocal()
+        except sqlite3.OperationalError as e:
+            error_str = str(e).lower()
+            if "locked" in error_str:
+                raise DatabaseLockedError(self.database_url)
+            elif "corrupt" in error_str or "malformed" in error_str:
+                raise DatabaseCorruptedError(self.database_url)
+            else:
+                raise handle_database_error(e, self.database_url)
+        except Exception as e:
+            raise handle_database_error(e, self.database_url)
     
     # ============================================
     # OPERAÇÕES DE USUÁRIO

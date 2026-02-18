@@ -32,9 +32,11 @@ pydantic-settings==2.1.0
 # Logging e Monitoramento
 loguru==0.7.2
 
-# Testes (para fases futuras)
+# Testes
 pytest==7.4.3
 pytest-asyncio==0.21.1
+pytest-cov==4.1.0  # Cobertura de código
+pytest-mock==3.12.0  # Mocks para testes
 
 # Dashboard (para fases futuras)
 streamlit==1.28.2

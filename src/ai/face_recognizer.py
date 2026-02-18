@@ -96,8 +96,7 @@ class FaceRecognizer:
             results = self.face_mesh.process(rgb_image)
 
             if not results.multi_face_landmarks:
-                logger.debug("Nenhum landmark detectado para gerar embedding")
-                return None
+                raise FaceNotDetectedError("Nenhum landmark detectado para gerar embedding")
 
             # Extrai landmarks
             face_landmarks = results.multi_face_landmarks[0]
@@ -167,9 +166,14 @@ class FaceRecognizer:
 
             return embedding.astype(np.float32)
 
-        except Exception as e:
-            logger.error(f"Erro ao gerar embedding: {e}")
-            return None
+            except FaceNotDetectedError:
+                raise  # Re-lança exceção específica
+            except Exception as e:
+                logger.error(f"Erro ao gerar embedding: {e}")
+                raise EmbeddingGenerationError(
+                    f"Falha ao gerar embedding: {e}",
+                    {"error_type": type(e).__name__}
+                )
 
     def generate_embedding_from_bbox(
         self,

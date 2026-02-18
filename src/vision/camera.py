@@ -10,6 +10,12 @@ import numpy as np
 from typing import Optional, Tuple
 from ..utils.logger import get_logger
 from ..utils.config import get_settings
+from ..exceptions import (
+    CameraNotOpenedError,
+    CameraDisconnectedError,
+    CameraReadError,
+    handle_camera_error
+)
 
 logger = get_logger(__name__)
 
@@ -76,12 +82,13 @@ class Camera:
         logger.info(f"Inicializando câmera {self.index}...")
         
         # Cria objeto VideoCapture
-        self.cap = cv2.VideoCapture(self.index)
+        try:
+            self.cap = cv2.VideoCapture(self.index)
+        except Exception as e:
+            raise handle_camera_error(e, self.index)
         
         if not self.cap.isOpened():
-            error_msg = f"Não foi possível abrir a câmera {self.index}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
+            raise CameraNotOpenedError(self.index)
         
         # Configura propriedades da câmera
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
@@ -104,6 +111,10 @@ class Camera:
         Returns:
             np.ndarray: Frame BGR (Blue, Green, Red) ou None se falhar
             
+        Raises:
+            CameraDisconnectedError: Se a câmera desconectar
+            CameraReadError: Se falhar ao ler frame
+            
         Example:
             >>> camera = Camera()
             >>> frame = camera.read()
@@ -112,15 +123,60 @@ class Camera:
         """
         if self.cap is None or not self.cap.isOpened():
             logger.warning("Tentativa de ler frame de câmera não inicializada")
-            return None
+            raise CameraDisconnectedError(self.index, "Câmera não está aberta")
         
-        ret, frame = self.cap.read()
+        try:
+            ret, frame = self.cap.read()
+        except Exception as e:
+            raise handle_camera_error(e, self.index)
         
         if not ret:
-            logger.warning("Falha ao ler frame da câmera")
-            return None
+            # Verifica se câmera ainda está aberta
+            if not self.cap.isOpened():
+                raise CameraDisconnectedError(self.index)
+            else:
+                # Câmera aberta mas não conseguiu ler frame
+                raise CameraReadError(self.index)
         
         return frame
+    
+    def reconnect(self, max_retries: int = 3) -> bool:
+        """
+        Tenta reconectar à câmera após desconexão.
+        
+        Args:
+            max_retries: Número máximo de tentativas
+            
+        Returns:
+            bool: True se reconectou com sucesso
+            
+        Raises:
+            CameraNotOpenedError: Se não conseguir reconectar após todas as tentativas
+        """
+        logger.info(f"Tentando reconectar à câmera {self.index} (máximo {max_retries} tentativas)...")
+        
+        # Libera conexão anterior
+        if self.cap is not None:
+            self.cap.release()
+            self.cap = None
+        
+        # Tenta reconectar
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.debug(f"Tentativa {attempt}/{max_retries} de reconexão...")
+                self._initialize()
+                logger.info(f"Câmera {self.index} reconectada com sucesso!")
+                return True
+            except CameraNotOpenedError:
+                if attempt < max_retries:
+                    import time
+                    time.sleep(1)  # Aguarda 1 segundo antes de tentar novamente
+                    continue
+                else:
+                    logger.error(f"Falha ao reconectar câmera {self.index} após {max_retries} tentativas")
+                    raise
+        
+        return False
     
     def is_opened(self) -> bool:
         """
