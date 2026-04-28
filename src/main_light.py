@@ -129,6 +129,33 @@ class BioFacePipelineLight:
             self.emotion_classifier = EmotionClassifierLight()
             logger.info("✓ Emotion Classifier (Light) inicializado")
         
+        # Classificação de emoções — tenta ONNX primeiro, depois DeepFace, depois Light
+        emotion_type = self.settings.emotion_classifier_type.lower()
+
+        if emotion_type == "deepface":
+            try:
+                from .ai.emotion_classifier_deepface import EmotionClassifierDeepFace
+                self.emotion_classifier = EmotionClassifierDeepFace()
+                logger.info("✓ Emotion Classifier (DeepFace) inicializado")
+            except (ImportError, Exception) as e:
+                logger.warning(f"DeepFace não disponível ({e}), tentando ONNX...")
+                emotion_type = "onnx"
+
+        if emotion_type in ("onnx", "light") or emotion_type == "deepface":
+            # Tenta ONNX (preciso, leve, sem TensorFlow)
+            try:
+                from src.ai.emotion_classifier_onnx import EmotionClassifierONNX
+                clf = EmotionClassifierONNX(confidence_threshold=0.0)
+                if clf.is_ready:
+                    self.emotion_classifier = clf
+                    logger.info("✓ Emotion Classifier (ONNX - FER+) inicializado")
+                else:
+                    raise RuntimeError("Modelo ONNX não carregou")
+            except Exception as e:
+                logger.warning(f"ONNX não disponível ({e}), usando EmotionClassifierLight")
+                self.emotion_classifier = EmotionClassifierLight()
+                logger.info("✓ Emotion Classifier (Light) inicializado")
+
         # Banco de dados (Fase 2)
         self.db = DatabaseRepository()
         logger.info("✓ Banco de dados inicializado")
@@ -348,158 +375,117 @@ class BioFacePipelineLight:
     def _draw_annotations(self, frame, results):
         """Desenha anotações no frame."""
         frame_copy = frame.copy()
-        
-        # Se não houver resultados, ainda mostra o frame (sem anotações)
+        h_frame, w_frame = frame_copy.shape[:2]
+
+        # Cores por emoção
+        EMOTION_COLORS = {
+            'Happy':    (0, 220, 0),      # Verde
+            'Sad':      (200, 80, 0),     # Azul escuro
+            'Angry':    (0, 0, 220),      # Vermelho
+            'Surprise': (0, 220, 220),    # Amarelo
+            'Neutral':  (160, 160, 160),  # Cinza
+            'Unknown':  (80, 80, 80),
+        }
+
+        # Emojis textuais para cada emoção (ASCII-safe para OpenCV)
+        EMOTION_ICONS = {
+            'Happy':    ':)',
+            'Sad':      ':(',
+            'Angry':    '>:(',
+            'Surprise': ':O',
+            'Neutral':  ':|',
+            'Unknown':  '?',
+        }
+
         if not results:
-            # Adiciona mensagem indicando que está aguardando face
-            cv2.putText(
-                frame_copy,
-                "Aguardando face...",
-                (10, 60),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0, 255, 255),
-                2
-            )
-        
+            cv2.putText(frame_copy, "Aguardando rosto...", (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
         for result in results:
-            bbox = result['bbox']
-            confidence = result['confidence']
-            
+            bbox   = result['bbox']
             x, y, w, h = bbox
-            
-            # Texto com identificação (usa nome estável)
+
             stable_name = result.get('user_name')
             stable_conf = result.get('identification_confidence', 0.0)
-            
-            # Emoção detectada
-            emotion_pt = result.get('emotion_pt')
+            emotion      = result.get('emotion', 'Unknown') or 'Unknown'
+            emotion_pt   = result.get('emotion_pt', 'Desconhecido') or 'Desconhecido'
             emotion_conf = result.get('emotion_confidence', 0.0)
-            
+
+            # Cor da bounding box: usa cor da emoção se detectada, senão laranja
+            box_color = EMOTION_COLORS.get(emotion, (0, 165, 255))
+
+            # ── Linha 1: identificação ────────────────────────────────────────
             if stable_name and stable_conf >= self.min_confidence_to_show:
-                text = f"{stable_name}: {stable_conf:.0%}"
-                color = (0, 255, 0)  # Verde para identificado
+                id_text  = f"{stable_name}  {stable_conf:.0%}"
+                id_color = (0, 255, 0)
             else:
-                text = f"DESCONHECIDO: {confidence:.0%}"
-                color = (0, 165, 255)  # Laranja para desconhecido
-            
-            # Adiciona emoção ao texto se detectada
-            if emotion_pt and emotion_conf >= self.emotion_classifier.confidence_threshold:
-                text += f" | {emotion_pt}: {emotion_conf:.0%}"
-            
-            # Desenha bounding box
-            cv2.rectangle(frame_copy, (x, y), (x + w, y + h), color, 2)
-            
-            # Calcula tamanho do texto
-            (text_width, text_height), baseline = cv2.getTextSize(
-                text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2
-            )
-            
-            # Fundo para texto (maior para melhor visibilidade)
-            cv2.rectangle(
-                frame_copy,
-                (x - 5, y - text_height - 15),
-                (x + text_width + 5, y + 5),
-                (0, 0, 0),
-                -1
-            )
-            
-            # Borda verde
-            cv2.rectangle(
-                frame_copy,
-                (x - 5, y - text_height - 15),
-                (x + text_width + 5, y + 5),
-                color,
-                2
-            )
-            
-            # Texto
-            cv2.putText(
-                frame_copy,
-                text,
-                (x, y - 5),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0, 255, 0),
-                2
-            )
-            
-            # Desenha círculos nos cantos do retângulo para destacar
-            corner_radius = 5
-            cv2.circle(frame_copy, (x, y), corner_radius, color, -1)
-            cv2.circle(frame_copy, (x + w, y), corner_radius, color, -1)
-            cv2.circle(frame_copy, (x, y + h), corner_radius, color, -1)
-            cv2.circle(frame_copy, (x + w, y + h), corner_radius, color, -1)
-        
+                id_text  = "Desconhecido"
+                id_color = (0, 165, 255)
+
+            # ── Linha 2: emoção ───────────────────────────────────────────────
+            # Mostra sempre que tiver emoção detectada (sem threshold rígido)
+            if emotion and emotion != 'Unknown':
+                icon       = EMOTION_ICONS.get(emotion, '')
+                emo_text   = f"{icon} {emotion_pt}  {emotion_conf:.0%}"
+                emo_color  = EMOTION_COLORS.get(emotion, (200, 200, 200))
+            else:
+                emo_text  = "Analisando..."
+                emo_color = (100, 100, 100)
+
+            # ── Desenha bounding box ──────────────────────────────────────────
+            cv2.rectangle(frame_copy, (x, y), (x + w, y + h), box_color, 2)
+
+            # Cantos decorativos
+            corner = 12
+            thick  = 3
+            for cx, cy, dx, dy in [(x, y, 1, 1), (x+w, y, -1, 1),
+                                    (x, y+h, 1, -1), (x+w, y+h, -1, -1)]:
+                cv2.line(frame_copy, (cx, cy), (cx + dx*corner, cy), box_color, thick)
+                cv2.line(frame_copy, (cx, cy), (cx, cy + dy*corner), box_color, thick)
+
+            # ── Painel de texto acima da bbox ─────────────────────────────────
+            font       = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.65
+            thickness  = 2
+            line_h     = 26  # altura de cada linha de texto
+
+            (w1, _), _ = cv2.getTextSize(id_text,  font, font_scale, thickness)
+            (w2, _), _ = cv2.getTextSize(emo_text, font, font_scale, thickness)
+            panel_w = max(w1, w2) + 16
+            panel_h = line_h * 2 + 10
+
+            # Posição do painel: acima da bbox, sem sair da tela
+            px = max(0, x)
+            py = max(0, y - panel_h - 4)
+
+            # Fundo semitransparente (overlay)
+            overlay = frame_copy.copy()
+            cv2.rectangle(overlay, (px, py), (px + panel_w, py + panel_h), (20, 20, 20), -1)
+            cv2.addWeighted(overlay, 0.65, frame_copy, 0.35, 0, frame_copy)
+
+            # Borda colorida no painel
+            cv2.rectangle(frame_copy, (px, py), (px + panel_w, py + panel_h), box_color, 1)
+
+            # Linha 1 — identificação
+            cv2.putText(frame_copy, id_text,
+                        (px + 8, py + line_h - 4),
+                        font, font_scale, id_color, thickness)
+
+            # Linha 2 — emoção
+            cv2.putText(frame_copy, emo_text,
+                        (px + 8, py + line_h * 2),
+                        font, font_scale, emo_color, thickness)
+
+        # ── HUD inferior ──────────────────────────────────────────────────────
+        hud_y = h_frame - 10
+        cv2.putText(frame_copy, "Q = sair",
+                    (w_frame - 100, hud_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1)
+
         # FPS
-        fps_text = f"FPS: {self.current_fps:.1f}"
-        cv2.putText(
-            frame_copy,
-            fps_text,
-            (10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 0),
-            2
-        )
-        
-        # Contador
-        frame_text = f"Frames: {self.frame_count}"
-        cv2.putText(
-            frame_copy,
-            frame_text,
-            (10, 60),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 0),
-            2
-        )
-        
-        # Aviso de versão leve
-        warning_text = "LIGHT MODE - No Emotion Detection"
-        cv2.putText(
-            frame_copy,
-            warning_text,
-            (10, frame_copy.shape[0] - 50),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 165, 255),
-            1
-        )
-        
-        # Instruções de como fechar (sempre visível)
-        instruction_text = "Pressione 'Q' para fechar"
-        cv2.putText(
-            frame_copy,
-            instruction_text,
-            (10, frame_copy.shape[0] - 20),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 255),
-            2
-        )
-        
-        # Fundo para instrução (para melhor visibilidade)
-        (text_width, text_height), baseline = cv2.getTextSize(
-            instruction_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
-        )
-        cv2.rectangle(
-            frame_copy,
-            (5, frame_copy.shape[0] - text_height - 25),
-            (15 + text_width, frame_copy.shape[0] - 5),
-            (0, 0, 0),
-            -1
-        )
-        cv2.putText(
-            frame_copy,
-            instruction_text,
-            (10, frame_copy.shape[0] - 20),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (0, 255, 0),
-            2
-        )
-        
+        cv2.putText(frame_copy, f"FPS: {self.current_fps:.1f}",
+                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
+
         return frame_copy
     
     def _stabilize_identification(self):

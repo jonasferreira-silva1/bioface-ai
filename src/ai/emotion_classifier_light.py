@@ -265,139 +265,132 @@ class EmotionClassifierLight:
     
     def _extract_geometric_features(self, landmarks: np.ndarray) -> Dict[str, float]:
         """
-        Extrai características geométricas dos landmarks do MediaPipe.
-        
-        Usa posições específicas dos landmarks para detectar expressões:
-        - Sobrancelhas (pontos 107, 336, 9, 10)
-        - Olhos (pontos 33, 7, 163, 144, 145, 153, 154, 155, 157, 158, 159, 160, 161, 246)
-        - Boca (pontos 61, 84, 17, 314, 405, 320, 307, 375, 321, 308, 324, 318)
-        
+        Extrai características geométricas dos landmarks do MediaPipe Face Mesh.
+
+        Índices corretos do MediaPipe Face Mesh 468 pontos:
+        - Sobrancelha esquerda (da perspectiva da câmera): 70, 63, 105, 66, 107
+        - Sobrancelha direita (da perspectiva da câmera): 336, 296, 334, 293, 300
+        - Olho esquerdo (pálpebra): topo=159, base=145, canto_int=133, canto_ext=33
+        - Olho direito (pálpebra): topo=386, base=374, canto_int=362, canto_ext=263
+        - Boca externa: canto_esq=61, canto_dir=291, topo=0, base=17
+        - Boca interna: topo=13, base=14
+        - Nariz (referência vertical): ponta=1, base=2
+        - Queixo (referência vertical): 152
+        - Testa (referência vertical): 10
+
         Args:
-            landmarks: Array de landmarks (468 pontos) do MediaPipe
-            
+            landmarks: Array de landmarks (468 pontos) do MediaPipe, em pixels
+
         Returns:
-            Dict com características geométricas
+            Dict com características geométricas normalizadas
         """
         try:
-            # Índices dos landmarks importantes (MediaPipe Face Mesh)
-            # Sobrancelhas
-            left_eyebrow = [107, 336, 9, 10, 151]
-            right_eyebrow = [337, 299, 333, 298, 301]
-            
-            # Olhos
-            left_eye = [33, 7, 163, 144, 145, 153, 154, 155, 157, 158, 159, 160, 161, 246]
-            right_eye = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
-            
-            # Boca
-            mouth_outer = [61, 84, 17, 314, 405, 320, 307, 375, 321, 308, 324, 318]
-            mouth_inner = [78, 95, 88, 178, 87, 14, 317, 402, 318, 324]
-            
-            # Extrai coordenadas
-            if len(landmarks.shape) == 2 and landmarks.shape[1] >= 2:
-                # Landmarks 2D (x, y)
-                coords = landmarks[:, :2]
-            elif len(landmarks.shape) == 2 and landmarks.shape[1] >= 3:
-                # Landmarks 3D (x, y, z) - usa apenas x, y
-                coords = landmarks[:, :2]
+            # Extrai apenas x, y
+            if landmarks.shape[1] >= 2:
+                coords = landmarks[:, :2].astype(np.float32)
             else:
                 return {}
-            
-            # Normaliza coordenadas para [0, 1]
-            # O face_detector retorna landmarks em pixels (multiplicado por w, h)
-            # Precisamos normalizar de volta para [0, 1] para análise geométrica
-            if coords.max() > 1.0:
-                # Coordenadas em pixels - normaliza pelo máximo encontrado
-                coords_max = coords.max(axis=0)
-                if coords_max[0] > 1.0 and coords_max[1] > 1.0:
-                    # Normaliza pelo máximo de cada eixo (mais robusto)
-                    coords = coords / (coords_max + 1e-8)
-                else:
-                    # Se algum eixo já está normalizado, normaliza apenas o que precisa
-                    if coords_max[0] > 1.0:
-                        coords[:, 0] = coords[:, 0] / coords_max[0]
-                    if coords_max[1] > 1.0:
-                        coords[:, 1] = coords[:, 1] / coords_max[1]
-            
+
+            if len(coords) < 468:
+                return {}
+
+            # Normaliza pelo tamanho do rosto (distância testa-queixo)
+            # Isso torna as métricas invariantes à distância da câmera
+            face_top_y    = coords[10][1]   # testa
+            face_bottom_y = coords[152][1]  # queixo
+            face_height   = abs(face_bottom_y - face_top_y) + 1e-6
+
+            # Referência horizontal: largura entre cantos externos dos olhos
+            face_left_x  = coords[33][0]   # canto externo olho esquerdo
+            face_right_x = coords[263][0]  # canto externo olho direito
+            face_width   = abs(face_right_x - face_left_x) + 1e-6
+
             features = {}
-            
-            # 1. Abertura dos olhos (distância entre pálpebras)
-            if len(left_eye) >= 4 and len(right_eye) >= 4:
-                # Ponto superior e inferior do olho
-                left_eye_top = coords[33] if 33 < len(coords) else coords[0]
-                left_eye_bottom = coords[145] if 145 < len(coords) else coords[0]
-                left_eye_open = np.linalg.norm(left_eye_top - left_eye_bottom)
-                
-                right_eye_top = coords[362] if 362 < len(coords) else coords[0]
-                right_eye_bottom = coords[386] if 386 < len(coords) else coords[0]
-                right_eye_open = np.linalg.norm(right_eye_top - right_eye_bottom)
-                
-                features['eye_openness'] = float((left_eye_open + right_eye_open) / 2.0)
-            else:
-                features['eye_openness'] = 0.5
-            
-            # 2. Posição das sobrancelhas (altura relativa)
-            if len(left_eyebrow) >= 2 and len(right_eyebrow) >= 2:
-                left_eyebrow_y = np.mean([coords[i][1] for i in left_eyebrow if i < len(coords)])
-                right_eyebrow_y = np.mean([coords[i][1] for i in right_eyebrow if i < len(coords)])
-                eyebrow_height = float((left_eyebrow_y + right_eyebrow_y) / 2.0)
-                features['eyebrow_height'] = eyebrow_height
-            else:
-                features['eyebrow_height'] = 0.5
-            
-            # 3. Abertura da boca (largura e altura)
-            if len(mouth_outer) >= 4:
-                mouth_points = [coords[i] for i in mouth_outer if i < len(coords)]
-                if len(mouth_points) >= 4:
-                    mouth_width = np.max([p[0] for p in mouth_points]) - np.min([p[0] for p in mouth_points])
-                    mouth_height = np.max([p[1] for p in mouth_points]) - np.min([p[1] for p in mouth_points])
-                    features['mouth_width'] = float(mouth_width)
-                    features['mouth_height'] = float(mouth_height)
-                    features['mouth_aspect_ratio'] = float(mouth_height / (mouth_width + 1e-8))
-                else:
-                    features['mouth_width'] = 0.1
-                    features['mouth_height'] = 0.05
-                    features['mouth_aspect_ratio'] = 0.5
-            else:
-                features['mouth_width'] = 0.1
-                features['mouth_height'] = 0.05
-                features['mouth_aspect_ratio'] = 0.5
-            
-            # 4. Inclinação das sobrancelhas (detecta raiva/tristeza)
-            # Slope negativo = sobrancelha inclinada para baixo (raiva)
-            # Slope positivo = sobrancelha inclinada para cima (surpresa)
-            if len(left_eyebrow) >= 2 and len(right_eyebrow) >= 2:
-                # Pega pontos externos das sobrancelhas
-                left_eyebrow_start_idx = left_eyebrow[0] if left_eyebrow[0] < len(coords) else 0
-                left_eyebrow_end_idx = left_eyebrow[-1] if left_eyebrow[-1] < len(coords) else 0
-                left_eyebrow_start = coords[left_eyebrow_start_idx]
-                left_eyebrow_end = coords[left_eyebrow_end_idx]
-                
-                # Calcula slope: (y_end - y_start) / (x_end - x_start)
-                # Se slope negativo, sobrancelha está descendo (raiva)
-                dx_left = left_eyebrow_end[0] - left_eyebrow_start[0]
-                if abs(dx_left) > 1e-6:
-                    left_eyebrow_slope = (left_eyebrow_end[1] - left_eyebrow_start[1]) / dx_left
-                else:
-                    left_eyebrow_slope = 0.0
-                
-                right_eyebrow_start_idx = right_eyebrow[0] if right_eyebrow[0] < len(coords) else 0
-                right_eyebrow_end_idx = right_eyebrow[-1] if right_eyebrow[-1] < len(coords) else 0
-                right_eyebrow_start = coords[right_eyebrow_start_idx]
-                right_eyebrow_end = coords[right_eyebrow_end_idx]
-                
-                dx_right = right_eyebrow_end[0] - right_eyebrow_start[0]
-                if abs(dx_right) > 1e-6:
-                    right_eyebrow_slope = (right_eyebrow_end[1] - right_eyebrow_start[1]) / dx_right
-                else:
-                    right_eyebrow_slope = 0.0
-                
-                # Média dos slopes (negativo = raiva)
-                features['eyebrow_slope'] = float((left_eyebrow_slope + right_eyebrow_slope) / 2.0)
-            else:
-                features['eyebrow_slope'] = 0.0
-            
+
+            # ── 1. ABERTURA DOS OLHOS (Eye Aspect Ratio - EAR) ──────────────
+            # EAR = altura_vertical / largura_horizontal
+            # Olho aberto: EAR alto | Olho fechado/semicerrado: EAR baixo
+            # Surpresa: EAR muito alto | Raiva/tristeza: EAR baixo
+            left_eye_h  = abs(coords[159][1] - coords[145][1]) / face_height
+            left_eye_w  = abs(coords[133][0] - coords[33][0])  / face_width
+            left_ear    = left_eye_h / (left_eye_w + 1e-6)
+
+            right_eye_h = abs(coords[386][1] - coords[374][1]) / face_height
+            right_eye_w = abs(coords[362][0] - coords[263][0]) / face_width
+            right_ear   = right_eye_h / (right_eye_w + 1e-6)
+
+            features['eye_ear'] = float((left_ear + right_ear) / 2.0)
+
+            # ── 2. DISTÂNCIA SOBRANCELHA → OLHO (normalizada) ───────────────
+            # Raiva: sobrancelhas descem → distância diminui
+            # Surpresa: sobrancelhas sobem → distância aumenta
+            # Tristeza: sobrancelhas internas sobem, externas descem
+            left_brow_y  = np.mean([coords[i][1] for i in [70, 63, 105, 66, 107]])
+            right_brow_y = np.mean([coords[i][1] for i in [336, 296, 334, 293, 300]])
+
+            left_eye_top_y  = coords[159][1]
+            right_eye_top_y = coords[386][1]
+
+            # Distância positiva = sobrancelha ACIMA do olho (normal)
+            # Distância pequena = sobrancelha próxima do olho (raiva/tensão)
+            left_brow_dist  = (left_eye_top_y  - left_brow_y)  / face_height
+            right_brow_dist = (right_eye_top_y - right_brow_y) / face_height
+            features['brow_eye_dist'] = float((left_brow_dist + right_brow_dist) / 2.0)
+
+            # ── 3. INCLINAÇÃO DAS SOBRANCELHAS ──────────────────────────────
+            # Raiva: ponta interna sobe, ponta externa desce → slope positivo (Y cresce para baixo)
+            # Tristeza: ponta interna sobe, ponta externa desce (igual raiva, mas menos intenso)
+            # Surpresa: sobrancelha arqueada para cima → slope próximo de zero
+            #
+            # Sobrancelha esquerda: ponta_interna=107 (mais à direita na imagem), ponta_externa=70
+            # Slope = (y_interna - y_externa) / (x_interna - x_externa)
+            # Raiva: y_interna < y_externa (interna mais alta) → slope negativo
+            left_brow_inner  = coords[107]  # ponta interna sobrancelha esquerda
+            left_brow_outer  = coords[70]   # ponta externa sobrancelha esquerda
+            dx_left = left_brow_inner[0] - left_brow_outer[0]
+            left_slope = (left_brow_inner[1] - left_brow_outer[1]) / (dx_left + 1e-6)
+
+            # Sobrancelha direita: ponta_interna=336, ponta_externa=300
+            right_brow_inner = coords[336]
+            right_brow_outer = coords[300]
+            dx_right = right_brow_outer[0] - right_brow_inner[0]
+            right_slope = (right_brow_inner[1] - right_brow_outer[1]) / (dx_right + 1e-6)
+
+            # Slope médio: negativo = raiva/tristeza, positivo = neutro/surpresa
+            features['brow_slope'] = float((left_slope + right_slope) / 2.0)
+
+            # ── 4. MOUTH ASPECT RATIO (MAR) ──────────────────────────────────
+            # MAR = altura_boca / largura_boca
+            # Feliz/Surpresa: MAR alto (boca aberta)
+            # Neutro/Raiva/Tristeza: MAR baixo (boca fechada)
+            mouth_width  = abs(coords[291][0] - coords[61][0]) / face_width
+            mouth_height = abs(coords[17][1]  - coords[0][1])  / face_height
+            features['mouth_mar'] = float(mouth_height / (mouth_width + 1e-6))
+
+            # ── 5. LARGURA DA BOCA NORMALIZADA ───────────────────────────────
+            # Sorriso: boca mais larga que o normal
+            # Referência: distância entre cantos externos dos olhos
+            features['mouth_width_norm'] = float(mouth_width)
+
+            # ── 6. CURVATURA DA BOCA (canto vs centro) ───────────────────────
+            # Feliz: cantos da boca sobem → curvatura positiva
+            # Triste: cantos da boca descem → curvatura negativa
+            # Ponto central inferior da boca: 17 (lábio inferior)
+            # Cantos: 61 (esquerdo), 291 (direito)
+            mouth_corner_y = (coords[61][1] + coords[291][1]) / 2.0
+            mouth_center_y = coords[17][1]
+            # Positivo = cantos mais altos que centro = sorriso
+            # Negativo = cantos mais baixos que centro = tristeza
+            mouth_curve = (mouth_center_y - mouth_corner_y) / face_height
+            features['mouth_curve'] = float(mouth_curve)
+
+            # ── 7. DISTÂNCIA NARIZ → QUEIXO (compressão facial vertical) ─────
+            # Raiva intensa: mandíbula tensionada, face levemente comprimida
+            nose_to_chin = abs(coords[152][1] - coords[1][1]) / face_height
+            features['nose_chin_dist'] = float(nose_to_chin)
+
             return features
-            
+
         except Exception as e:
             logger.debug(f"Erro ao extrair características geométricas: {e}")
             return {}
@@ -408,129 +401,104 @@ class EmotionClassifierLight:
         target_emotion: Optional[str] = None
     ) -> Tuple[str, float]:
         """
-        Classifica emoção a partir de características visuais.
-        
-        Usa heurísticas baseadas em características faciais conhecidas.
-        
+        Classifica emoção a partir de características geométricas e visuais.
+
+        Lógica baseada em Action Units (AU) do sistema FACS:
+        - Happy:    AU6+AU12 → curvatura positiva da boca + boca larga
+        - Sad:      AU1+AU4  → sobrancelhas internas sobem (slope negativo) + cantos da boca descem
+        - Angry:    AU4+AU5+AU23 → sobrancelhas descem/aproximam + olhos semicerrados + boca tensa
+        - Surprise: AU1+AU2+AU5+AU26 → sobrancelhas sobem + olhos abertos + boca aberta
+        - Neutral:  ausência de sinais expressivos
+
         Args:
-            features: Características extraídas
+            features: Características extraídas (geométricas + visuais)
             target_emotion: Se fornecido, calcula confiança apenas para esta emoção
-            
+
         Returns:
             Tuple[str, float]: (emoção, confiança)
         """
+        has_geo = 'brow_eye_dist' in features  # landmarks disponíveis?
+
         scores = {}
-        
-        # Happy (Feliz): boca aberta/curvada para cima, olhos mais brilhantes
-        happy_score = 0.0
-        
-        # Se tiver características geométricas, usa elas
-        if 'mouth_aspect_ratio' in features:
-            # Boca aberta (alta altura relativa) = feliz
-            mouth_open = features['mouth_aspect_ratio'] * 2.0
-            happy_score += mouth_open * 0.4
-        
-        if 'mouth_width' in features:
-            # Boca larga = sorriso
-            mouth_wide = min(1.0, features['mouth_width'] * 5.0)
-            happy_score += mouth_wide * 0.3
-        
-        # Características visuais
-        happy_score += (
-            features['mouth_brightness'] * 0.2 +
-            features['eye_brightness'] * 0.1
-        )
-        
-        scores['Happy'] = min(1.0, happy_score * 1.5)
-        
-        # Sad (Triste): boca mais escura, olhos mais escuros, mais assimetria
-        sad_score = (
-            (1.0 - features['mouth_brightness']) * 0.4 +
-            (1.0 - features['eye_brightness']) * 0.3 +
-            features['asymmetry'] * 0.2 +
-            (1.0 - features['edge_density']) * 0.1
-        )
-        scores['Sad'] = min(1.0, sad_score * 2.0)
-        
-        # Angry (Raiva): sobrancelhas baixas/inclinadas para baixo, boca fechada/tensa
-        angry_score = 0.0
-        has_geometric = False
-        
-        # Se tiver características geométricas, usa elas (mais preciso)
-        if 'eyebrow_slope' in features:
-            # Sobrancelhas inclinadas para baixo (negativo) = raiva
-            # Slope negativo significa que a direita está mais baixa que a esquerda
-            eyebrow_slope_angry = max(0.0, -features['eyebrow_slope']) * 3.0
-            angry_score += min(1.0, eyebrow_slope_angry) * 0.5
-            has_geometric = True
-        
-        if 'eyebrow_height' in features:
-            # Sobrancelhas baixas = raiva (quanto menor, mais raiva)
-            eyebrow_low = (1.0 - features['eyebrow_height']) * 2.0
-            angry_score += min(1.0, eyebrow_low) * 0.3
-            has_geometric = True
-        
-        if 'mouth_aspect_ratio' in features:
-            # Boca fechada/tensa (baixa altura relativa à largura) = raiva
-            # Aspect ratio baixo = boca fechada/tensa
-            mouth_tight = (1.0 - features['mouth_aspect_ratio']) * 2.5
-            angry_score += min(1.0, mouth_tight) * 0.2
-            has_geometric = True
-        
-        # Características visuais (fallback se não tiver landmarks, ou complemento)
-        if not has_geometric:
-            # Sem landmarks - usa apenas características visuais
-            angry_score = (
-                features['contrast'] * 0.25 +
-                features['edge_density'] * 0.35 +
-                features['asymmetry'] * 0.25 +
-                (1.0 - features['mouth_brightness']) * 0.15  # Boca escura = tensa
-            )
+
+        if has_geo:
+            brow_eye_dist    = features['brow_eye_dist']
+            brow_slope       = features['brow_slope']
+            eye_ear          = features['eye_ear']
+            mouth_mar        = features['mouth_mar']
+            mouth_width_norm = features['mouth_width_norm']
+            mouth_curve      = features['mouth_curve']
+
+            # ── VALORES CALIBRADOS ────────────────────────────────────────────
+            # Neutro:   EAR=0.1081  brow=0.1149  curve=0.0614
+            # Feliz:    EAR=0.0967  brow=0.0974  curve=0.0972
+            # Bravo:    EAR=0.1352  brow=0.0743  curve=0.0751
+            # Triste:   EAR=0.1393  brow=0.0882  curve=0.0571
+            # Surpresa: EAR=0.1676  brow=0.0926  curve=0.0731
+
+            # ── RAIVA (veto dominante — sobrancelha baixa bloqueia feliz) ─────
+            brow_down   = max(0.0, 0.0946 - brow_eye_dist) * 15.0
+            ear_angry   = max(0.0, 0.1216 - eye_ear) * 10.0
+            slope_angry = max(0.0, abs(brow_slope) - 0.03) * 3.0
+            scores['Angry'] = min(1.0, brow_down*0.60 + ear_angry*0.25 + slope_angry*0.15)
+
+            # ── FELIZ (bloqueado se sobrancelha franzida) ─────────────────────
+            brow_ok     = 1.0 if brow_eye_dist > 0.0996 else 0.0
+            curve_happy = max(0.0, mouth_curve - 0.0793) * 10.0
+            width_happy = max(0.0, mouth_width_norm - 0.6080) * 5.0
+            scores['Happy'] = min(1.0, (curve_happy*0.65 + width_happy*0.35) * brow_ok)
+
+            # ── TRISTE ────────────────────────────────────────────────────────
+            curve_sad  = max(0.0, -0.0592 - mouth_curve) * 10.0
+            slope_sad  = max(0.0, -brow_slope - 0.08) * 4.0
+            scores['Sad'] = min(1.0, curve_sad*0.65 + slope_sad*0.35)
+
+            # ── SURPRESA ──────────────────────────────────────────────────────
+            brow_up  = max(0.0, brow_eye_dist - 0.1037) * 14.0
+            ear_surp = max(0.0, eye_ear - 0.1378) * 12.0
+            mar_surp = max(0.0, mouth_mar - 0.2301) * 5.0
+            scores['Surprise'] = min(1.0, brow_up*0.40 + ear_surp*0.35 + mar_surp*0.25)
+
+            # ── NEUTRO ────────────────────────────────────────────────────────
+            curve_neutral = max(0.0, 1.0 - abs(mouth_curve - 0.0614) * 14.0)
+            brow_neutral  = max(0.0, 1.0 - abs(brow_eye_dist - 0.1149) * 25.0)
+            ear_neutral   = max(0.0, 1.0 - abs(eye_ear - 0.1081) * 20.0)
+            scores['Neutral'] = min(1.0, curve_neutral*0.5 + brow_neutral*0.3 + ear_neutral*0.2)
+
+            confidence_scale = 0.92
+
         else:
-            # Com landmarks - adiciona características visuais como complemento
-            angry_score += (
-                features['contrast'] * 0.1 +
-                features['edge_density'] * 0.1 +
-                (1.0 - features['mouth_brightness']) * 0.05  # Boca escura = tensa
-            )
-        
-        scores['Angry'] = min(1.0, angry_score * 2.0)  # Multiplica por 2.0 para aumentar sensibilidade
-        
-        # Surprise (Surpresa): olhos muito brilhantes, alto contraste, alta densidade de bordas
-        surprise_score = (
-            features['eye_brightness'] * 0.4 +
-            features['contrast'] * 0.3 +
-            features['edge_density'] * 0.3
-        )
-        scores['Surprise'] = min(1.0, surprise_score * 1.8)
-        
-        # Neutral (Neutro): características médias, baixa assimetria, baixa densidade de bordas
-        neutral_score = (
-            (1.0 - features['asymmetry']) * 0.4 +
-            (1.0 - features['edge_density']) * 0.3 +
-            (1.0 - abs(features['brightness'] - 0.5)) * 0.3
-        )
-        scores['Neutral'] = min(1.0, neutral_score * 1.5)
-        
+            # ── FALLBACK: apenas características visuais ──────────────────────
+            # Menos preciso, mas funciona sem landmarks
+            brightness   = features['brightness']
+            contrast     = features['contrast']
+            edge_density = features['edge_density']
+            asymmetry    = features['asymmetry']
+            mouth_bright = features['mouth_brightness']
+            eye_bright   = features['eye_brightness']
+
+            scores['Happy']    = min(1.0, (mouth_bright * 0.5 + eye_bright * 0.3 + (1.0 - asymmetry) * 0.2) * 1.4)
+            scores['Sad']      = min(1.0, ((1.0 - mouth_bright) * 0.4 + (1.0 - eye_bright) * 0.3 + asymmetry * 0.3) * 1.6)
+            scores['Angry']    = min(1.0, (contrast * 0.35 + edge_density * 0.35 + asymmetry * 0.30) * 1.8)
+            scores['Surprise'] = min(1.0, (eye_bright * 0.4 + contrast * 0.3 + edge_density * 0.3) * 1.6)
+            scores['Neutral']  = min(1.0, ((1.0 - asymmetry) * 0.4 + (1.0 - edge_density) * 0.3 + (1.0 - abs(brightness - 0.5)) * 0.3) * 1.4)
+
+            confidence_scale = 0.65  # sem landmarks, confiança mais baixa
+
         # Se target_emotion foi fornecido, retorna apenas essa
         if target_emotion:
-            return target_emotion, scores.get(target_emotion, 0.0)
-        
-        # Encontra a emoção com maior score
-        best_emotion = max(scores.keys(), key=lambda e: scores[e])
-        best_confidence = scores[best_emotion]
-        
-        # Normaliza confiança (ajusta para range mais realista)
-        # Como são heurísticas, reduz um pouco a confiança
-        # Mas mantém mais alta se tiver características geométricas
-        if 'eyebrow_slope' in features or 'mouth_aspect_ratio' in features:
-            # Com landmarks - confiança mais alta
-            best_confidence = min(0.95, best_confidence * 0.85)
-        else:
-            # Sem landmarks - confiança mais baixa
-            best_confidence = min(0.95, best_confidence * 0.7)
-        
-        return best_emotion, best_confidence
+            return target_emotion, float(scores.get(target_emotion, 0.0) * confidence_scale)
+
+        # Normaliza scores para somar 1.0 (distribuição de probabilidade)
+        total = sum(scores.values()) + 1e-8
+        probs = {e: v / total for e, v in scores.items()}
+
+        # Emoção vencedora
+        best_emotion = max(probs, key=lambda e: probs[e])
+        # Confiança = probabilidade normalizada × escala
+        best_confidence = min(0.95, probs[best_emotion] * confidence_scale)
+
+        return best_emotion, float(best_confidence)
     
     def get_emotion_pt(self, emotion: str) -> str:
         """

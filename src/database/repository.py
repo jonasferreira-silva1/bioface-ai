@@ -66,7 +66,14 @@ class DatabaseRepository:
                 raise DatabaseCorruptedError(self.database_url)
             else:
                 raise handle_database_error(e, self.database_url)
+        except sqlite3.DatabaseError as e:
+            # Banco corrompido lança DatabaseError (não OperationalError)
+            raise DatabaseCorruptedError(self.database_url)
         except Exception as e:
+            # SQLAlchemy pode envolver erros de banco corrompido
+            error_str = str(e).lower()
+            if "file is not a database" in error_str or "corrupt" in error_str or "malformed" in error_str:
+                raise DatabaseCorruptedError(self.database_url)
             raise handle_database_error(e, self.database_url)
     
     def get_session(self) -> Session:

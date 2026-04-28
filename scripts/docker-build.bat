@@ -1,45 +1,71 @@
 @echo off
-REM Script para build da imagem Docker do BioFace AI (Windows)
+REM ─────────────────────────────────────────────────────────────────────────────
+REM BioFace AI — Build dos containers Docker (Windows)
+REM
+REM Uso:
+REM   scripts\docker-build.bat          (builda API + Dashboard)
+REM   scripts\docker-build.bat api       (só API)
+REM   scripts\docker-build.bat dashboard (só Dashboard)
+REM ─────────────────────────────────────────────────────────────────────────────
 
-echo 🐳 Building BioFace AI Docker Image...
+@echo off
+setlocal
+
+echo.
+echo  BioFace AI - Docker Build
+echo  ─────────────────────────
 echo.
 
-REM Verifica se Docker está instalado
 docker --version >nul 2>&1
 if errorlevel 1 (
-    echo ❌ Docker não está instalado!
-    echo    Instale Docker Desktop: https://www.docker.com/get-started
+    echo  ERRO: Docker nao encontrado.
+    echo  Instale Docker Desktop: https://www.docker.com/get-started
     exit /b 1
 )
 
-REM Opções
-set BUILD_TYPE=%1
-if "%BUILD_TYPE%"=="" set BUILD_TYPE=cpu
+set TARGET=%1
+if "%TARGET%"=="" set TARGET=all
 
-set IMAGE_NAME=bioface-ai
-set TAG=%2
-if "%TAG%"=="" set TAG=latest
+if "%TARGET%"=="api" goto build_api
+if "%TARGET%"=="dashboard" goto build_dashboard
+if "%TARGET%"=="all" goto build_all
 
-if "%BUILD_TYPE%"=="cpu" (
-    echo 📦 Building CPU image...
-    docker build -t %IMAGE_NAME%:%TAG% .
-    echo ✅ Build concluído: %IMAGE_NAME%:%TAG%
-) else if "%BUILD_TYPE%"=="gpu" (
-    echo 📦 Building GPU image...
-    docker build -f Dockerfile.gpu -t %IMAGE_NAME%:gpu-%TAG% .
-    echo ✅ Build concluído: %IMAGE_NAME%:gpu-%TAG%
-) else (
-    echo ❌ Tipo inválido: %BUILD_TYPE%
-    echo    Use: cpu ou gpu
-    exit /b 1
-)
+echo  ERRO: opcao invalida "%TARGET%"
+echo  Use: api, dashboard ou deixe em branco para buildar tudo.
+exit /b 1
 
+:build_all
+call :build_api
+call :build_dashboard
+goto done
+
+:build_api
+echo  [1/2] Buildando API (FastAPI)...
+docker build -f Dockerfile.api -t bioface-api:latest .
+if errorlevel 1 ( echo  ERRO no build da API & exit /b 1 )
+echo  OK - bioface-api:latest
 echo.
-echo 🚀 Para executar:
-if "%BUILD_TYPE%"=="cpu" (
-    echo    docker run -it --rm --device=/dev/video0 %IMAGE_NAME%:%TAG%
-) else (
-    echo    docker run -it --rm --gpus all --device=/dev/video0 %IMAGE_NAME%:gpu-%TAG%
-)
+goto :eof
 
+:build_dashboard
+echo  [2/2] Buildando Dashboard (Streamlit)...
+docker build -f Dockerfile.dashboard -t bioface-dashboard:latest .
+if errorlevel 1 ( echo  ERRO no build do Dashboard & exit /b 1 )
+echo  OK - bioface-dashboard:latest
+echo.
+goto :eof
 
+:done
+echo.
+echo  Build concluido!
+echo.
+echo  Para subir os servicos:
+echo    docker-compose up
+echo.
+echo  Para rodar o pipeline de camera (em outro terminal):
+echo    python main-light.py --api-url http://localhost:8000
+echo.
+echo  Acesse:
+echo    API docs  -^> http://localhost:8000/docs
+echo    Dashboard -^> http://localhost:8501
+echo.

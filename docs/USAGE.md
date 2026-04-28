@@ -1,169 +1,139 @@
-# 🎥 Como Usar - BioFace AI
+# Como Usar — BioFace AI
 
-Guia completo de uso do sistema.
-
----
-
-## 🚀 Iniciar o Sistema
-
-### Windows (Recomendado)
+## Iniciar o sistema
 
 ```bash
+# Modo standalone (sem API)
 python main-light.py
+
+# Modo híbrido (envia dados para a API em Docker)
+python main-light.py --api-url http://localhost:8000
 ```
 
-### Linux/Mac
-
-```bash
-python3 main-light.py
-```
+A janela de vídeo abre automaticamente. Pressione `Q` para fechar.
 
 ---
 
-## 📺 Interface Visual
-
-Quando o sistema iniciar, uma **janela de vídeo** será aberta mostrando:
-
-1. **Vídeo ao vivo** da sua câmera
-2. **Retângulo verde** ao redor do rosto detectado
-3. **Nome da pessoa** identificada (se cadastrada)
-4. **Emoção detectada** (se habilitado)
-5. **FPS** (frames por segundo) no canto superior esquerdo
-6. **Contador de frames** processados
-
-### Feedback Visual
-
-**Quando uma face é detectada:**
-- ✅ **Retângulo verde** ao redor do rosto
-- ✅ **Nome da pessoa** (se identificada) ou "DESCONHECIDO"
-- ✅ **Emoção** (se habilitado)
-- ✅ **Confiança** da identificação (%)
-
----
-
-## 🆕 Cadastrar uma Nova Pessoa
-
-### Comando
+## Cadastrar uma pessoa
 
 ```bash
 python scripts/register_face.py --name "Jonas Silva"
 ```
 
-### Passo a Passo
+1. Uma janela da câmera abre
+2. Posicione o rosto na frente da câmera
+3. Pressione `ESPAÇO` para capturar
+4. Pressione `ESC` para cancelar
 
-1. **Execute o comando** no terminal
-2. **Uma janela da câmera abrirá**
-3. **Posicione-se na frente da câmera**
-4. **Aguarde a detecção** (aparecerá um retângulo verde)
-5. **Pressione ESPAÇO** para capturar e cadastrar
-6. **Pressione ESC** para cancelar
-
-### Exemplos
-
-```bash
-# Cadastrar com nome
-python scripts/register_face.py --name "João Silva"
-
-# Cadastrar com nome composto (use aspas)
-python scripts/register_face.py --name "Maria Santos"
-
-# Cadastrar sem nome (anônimo)
-python scripts/register_face.py
-```
-
-**⚠️ Importante:** O sistema impede cadastros duplicados. Se a pessoa já estiver cadastrada, uma mensagem será exibida.
-
-Para mais detalhes, consulte [CADASTRO_E_CONSULTA.md](CADASTRO_E_CONSULTA.md).
+O sistema impede cadastros duplicados automaticamente.
 
 ---
 
-## 🔍 Consultar Pessoas Cadastradas
-
-### Listar Todos os Usuários
+## Gerenciar usuários
 
 ```bash
+# Listar todos os usuários cadastrados
 python scripts/list_all_users.py
+
+# Deletar um usuário pelo ID
+python scripts/delete_user.py --id 3
+
+# Deletar todos os embeddings de um usuário (mantém o cadastro)
+python scripts/delete_all_user_embeddings.py --id 3
+
+# Mesclar dois usuários (útil quando a mesma pessoa foi cadastrada duas vezes)
+python scripts/merge_users.py --source 4 --target 2
+
+# Limpar embeddings órfãos (sem usuário associado)
+python scripts/cleanup_orphan_embeddings.py
 ```
 
-### Verificar se Pessoa Está Cadastrada
+---
+
+## Testar detecção de emoções
 
 ```bash
-# Lista todos e procure pelo nome
-python scripts/list_all_users.py | findstr "Jonas"  # Windows
-python scripts/list_all_users.py | grep "Jonas"      # Linux/Mac
+python scripts/test_emotion_detection.py
+```
+
+Mostra as métricas geométricas em tempo real no canto da tela — útil para entender o que o sistema está detectando.
+
+---
+
+## Diagnosticar problemas de reconhecimento
+
+```bash
+python scripts/diagnose_recognition.py
+python scripts/debug_recognition.py
 ```
 
 ---
 
-## ⌨️ Controles
+## Emoções detectadas
 
-### Fechar o Sistema
+| Emoção | Ícone | Cor |
+|--------|-------|-----|
+| Feliz | `:)` | Verde |
+| Triste | `:(` | Azul |
+| Raiva | `>:(` | Vermelho |
+| Surpresa | `:O` | Amarelo |
+| Neutro | `:\|` | Cinza |
 
-**Opção 1: Tecla Q (Recomendado)**
-1. Clique na janela de vídeo para focar nela
-2. Pressione a tecla `Q` (ou `q`)
-3. O sistema fechará automaticamente
-
-**Opção 2: Tecla ESC**
-1. Clique na janela de vídeo
-2. Pressione `ESC`
-3. O sistema fechará
-
-**Opção 3: Ctrl+C no Terminal**
-1. Clique no terminal
-2. Pressione `Ctrl+C`
-3. O sistema será interrompido
+A detecção usa um modelo ONNX (FER+) combinado com análise geométrica dos landmarks do MediaPipe para maior precisão em raiva e surpresa.
 
 ---
 
-## ⚠️ Problemas Comuns
+## Banco de dados
 
-### Janela não aparece?
+O banco SQLite (`bioface.db`) é criado automaticamente na raiz do projeto.
 
-1. Verifique se há outras janelas cobrindo ela
-2. Olhe na barra de tarefas
-3. Tente `Alt+Tab` para encontrar a janela
-4. A janela pode estar minimizada
+```bash
+# Consultar diretamente (requer sqlite3 instalado)
+sqlite3 bioface.db "SELECT id, name, created_at FROM users;"
+```
 
-### Não detecta rosto?
-
-1. Verifique se há luz suficiente
-2. Certifique-se de que seu rosto está visível
-3. Tente se aproximar ou se afastar da câmera
-4. Verifique se a câmera não está bloqueada
-
-### Câmera não abre?
-
-1. Feche outros programas usando a câmera (Zoom, Teams, etc.)
-2. Verifique as permissões da câmera
-3. Tente reiniciar o programa
-
-### Identifica como "DESCONHECIDO"?
-
-1. Certifique-se de que você está cadastrado
-2. Verifique se há luz suficiente
-3. Tente se aproximar mais da câmera
-4. Re-cadastre-se se necessário
+Para backup:
+```bash
+copy bioface.db bioface_backup.db   # Windows
+cp bioface.db bioface_backup.db     # Linux/Mac
+```
 
 ---
 
-## 💡 Dicas
+## API REST
 
-- **Foque a janela**: Clique nela antes de pressionar 'Q'
-- **Terminal separado**: Mantenha o terminal visível para ver os logs
-- **Performance**: Se estiver lento, aumente o `FRAME_SKIP` no `.env`
-- **Iluminação**: Boa iluminação melhora muito a detecção
-- **Estabilização**: O sistema usa estabilização temporal para evitar oscilação
+Com os serviços Docker rodando (`docker-compose up`), a API fica disponível em `http://localhost:8000`.
 
----
+### Endpoints
 
-## 📚 Mais Informações
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| `GET` | `/api/health` | Status do sistema |
+| `GET` | `/api/users` | Lista usuários |
+| `POST` | `/api/users` | Cria usuário |
+| `GET` | `/api/users/{id}` | Detalhes do usuário |
+| `DELETE` | `/api/users/{id}` | Deleta usuário |
+| `GET` | `/api/emotions/history` | Histórico de emoções |
+| `GET` | `/api/stats` | Estatísticas gerais |
+| `WS` | `/ws/detections` | Stream de detecções em tempo real |
+| `WS` | `/ws/emotions` | Stream de emoções em tempo real |
 
-- **[CADASTRO_E_CONSULTA.md](CADASTRO_E_CONSULTA.md)** - Detalhes sobre cadastro
-- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Solução de problemas
-- **[STATUS.md](STATUS.md)** - Estado atual do projeto
+Documentação interativa (Swagger): http://localhost:8000/docs
 
----
+### Exemplos rápidos
 
-**Última atualização:** 2026-02-17
+```bash
+# Health check
+curl http://localhost:8000/api/health
 
+# Listar usuários
+curl http://localhost:8000/api/users
+
+# Criar usuário
+curl -X POST http://localhost:8000/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Jonas Silva"}'
+
+# Estatísticas
+curl http://localhost:8000/api/stats
+```

@@ -1,187 +1,93 @@
-# 🏗️ Arquitetura Híbrida - BioFace AI
+# Arquitetura Híbrida — BioFace AI
 
-**Status:** ✅ Implementado
+## Visão Geral
 
----
-
-## 📋 Visão Geral
-
-O BioFace AI utiliza uma **arquitetura híbrida** que combina:
-- **Processamento Edge (Host)**: Pipeline de câmera roda nativamente
-- **Serviços (Docker)**: API e Dashboard rodam em containers
-
-Esta arquitetura oferece:
-- ✅ **Acesso direto à câmera** (funciona no Windows)
-- ✅ **Deploy fácil** (API/Dashboard containerizados)
-- ✅ **Baixa latência** (processamento local)
-- ✅ **Escalabilidade** (múltiplas câmeras → mesma API)
-
----
-
-## 🎯 Por Que Arquitetura Híbrida?
-
-### Problema Original
-- Docker no Windows não acessa câmera diretamente (`/dev/video0` é Linux)
-- Workarounds complexos (usbipd-win, WSL2) são difíceis de configurar
-
-### Solução
-- **Câmera no Host**: Pipeline roda nativamente, acessa câmera diretamente
-- **Serviços no Docker**: API e Dashboard isolados, fáceis de deploy
-- **Comunicação via HTTP/WebSocket**: Pipeline envia dados para API
-
----
-
-## 📊 Diagrama da Arquitetura
+O BioFace AI usa uma **arquitetura híbrida** que separa responsabilidades entre o host e containers Docker:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    HOST (Windows/Linux)                 │
-│                                                          │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  Pipeline de Câmera (main_light.py)              │  │
-│  │  - Acessa câmera diretamente                     │  │
-│  │  - Processa frames                               │  │
-│  │  - Reconhece faces                               │  │
-│  │  - Detecta emoções                               │  │
-│  │  - Salva no banco local                          │  │
-│  │  └─── HTTP/WebSocket ────┐                      │  │
-│  └──────────────────────────┼──────────────────────┘  │
-│                              │                          │
-└──────────────────────────────┼──────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────┐
-│                    Docker Containers                     │
-│                                                          │
-│  ┌──────────────────────┐  ┌──────────────────────┐  │
-│  │   API FastAPI        │  │  Dashboard Streamlit  │  │
-│  │   (Porta 8000)       │  │  (Porta 8501)        │  │
-│  │                      │  │                      │  │
-│  │  - Endpoints REST    │  │  - Visualizações     │  │
-│  │  - WebSocket         │  │  - Gráficos          │  │
-│  │  - Banco SQLite      │  │  - Estatísticas      │  │
-│  └──────────────────────┘  └──────────────────────┘  │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  HOST (Windows / Linux / Mac)                               │
+│                                                             │
+│  ┌──────────────────────────────────────┐                   │
+│  │  Pipeline de Câmera  (main-light.py) │                   │
+│  │                                      │                   │
+│  │  Webcam → MediaPipe → FaceRecognizer │                   │
+│  │       → EmotionClassifier (ONNX)     │                   │
+│  │       → HTTP POST → API              │                   │
+│  └──────────────────────────────────────┘                   │
+│                        │                                    │
+│                        │ HTTP / WebSocket                   │
+│                        ▼                                    │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  Docker Compose                                     │    │
+│  │                                                     │    │
+│  │  ┌─────────────────┐    ┌──────────────────────┐   │    │
+│  │  │  API (FastAPI)  │◄───│  Dashboard           │   │    │
+│  │  │  :8000          │    │  (Streamlit)  :8501  │   │    │
+│  │  │                 │    │                      │   │    │
+│  │  │  REST + WS      │    │  Gráficos, stats,    │   │    │
+│  │  │  SQLite         │    │  gerenciamento       │   │    │
+│  │  └─────────────────┘    └──────────────────────┘   │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
----
+## Por que essa separação?
 
-## 🚀 Como Usar
+### Pipeline no host
+- Docker no Windows **não acessa webcam** diretamente (limitação do Docker Desktop)
+- Rodar no host garante **latência mínima** no processamento de frames
+- MediaPipe e OpenCV funcionam melhor com acesso direto ao hardware
 
-### Modo 1: Standalone (Sem API)
+### API e Dashboard em Docker
+- **Isolamento**: dependências da API não conflitam com as do pipeline
+- **Portabilidade**: qualquer máquina com Docker sobe os serviços com um comando
+- **Deploy fácil**: em produção, basta fazer push das imagens para um registry
 
-Pipeline roda sozinho, salva tudo localmente:
+## Como usar
 
+### 1. Sobe os serviços (API + Dashboard)
 ```bash
+docker-compose up --build
+```
+
+### 2. Inicia o pipeline de câmera
+```bash
+# Modo conectado à API (envia dados em tempo real)
+python main-light.py --api-url http://localhost:8000
+
+# Modo standalone (sem API)
 python main-light.py
 ```
 
-### Modo 2: Híbrido (Com API)
+### 3. Acesse
+| Serviço   | URL                          |
+|-----------|------------------------------|
+| API docs  | http://localhost:8000/docs   |
+| Dashboard | http://localhost:8501        |
 
-**Terminal 1: Inicia serviços Docker**
+## Estrutura dos containers
+
+| Container          | Imagem               | Porta | Responsabilidade              |
+|--------------------|----------------------|-------|-------------------------------|
+| `bioface-api`      | `bioface-api:latest` | 8000  | REST API + WebSocket + SQLite |
+| `bioface-dashboard`| `bioface-dashboard:latest` | 8501 | Interface visual Streamlit |
+
+## Comunicação entre componentes
+
+```
+Pipeline (host)  ──POST /api/emotions──►  API (Docker)
+Pipeline (host)  ──POST /api/users────►  API (Docker)
+Dashboard        ──GET  /api/stats────►  API (Docker)
+Dashboard        ──WS   /ws/emotions──►  API (Docker)
+```
+
+## Build manual
+
 ```bash
-docker-compose -f docker-compose.services.yml up
+# Windows
+scripts\docker-build.bat
+
+# Linux / Mac
+./scripts/docker-build.sh
 ```
-
-**Terminal 2: Inicia pipeline (conectado à API)**
-```bash
-python main-light.py --api-url http://localhost:8000
-```
-
-O pipeline:
-- ✅ Processa câmera localmente
-- ✅ Salva no banco local
-- ✅ Envia detecções para API via WebSocket
-- ✅ API distribui para clientes conectados (Dashboard, etc.)
-
----
-
-## 📁 Estrutura de Arquivos
-
-```
-bioface-ai/
-├── docker-compose.services.yml  # Docker Compose para serviços
-├── Dockerfile.api               # Container da API
-├── Dockerfile.dashboard         # Container do Dashboard
-├── requirements-api.txt         # Dependências da API
-├── requirements-dashboard.txt   # Dependências do Dashboard
-├── main-light.py                # Pipeline (roda no host)
-├── run_api.py                   # Script para rodar API
-├── dashboard.py                 # Dashboard Streamlit
-└── src/
-    ├── api/
-    │   ├── client.py            # Cliente HTTP/WebSocket
-    │   ├── main.py              # API FastAPI
-    │   └── ...
-    └── main_light.py            # Pipeline principal
-```
-
----
-
-## 🔧 Configuração
-
-### Variáveis de Ambiente
-
-**Pipeline (Host):**
-```bash
-# .env ou variáveis de ambiente
-API_URL=http://localhost:8000  # Opcional: URL da API
-```
-
-**API (Docker):**
-```yaml
-# docker-compose.services.yml
-environment:
-  - DATABASE_URL=sqlite:///./bioface.db
-  - CORS_ORIGINS=*
-```
-
-**Dashboard (Docker):**
-```yaml
-environment:
-  - API_BASE_URL=http://api:8000
-```
-
----
-
-## 🌐 Comunicação
-
-### HTTP REST
-- Pipeline pode consultar API: `GET /api/users`, `GET /api/stats`
-- Dashboard consulta API: Todas as rotas REST
-
-### WebSocket
-- Pipeline envia detecções: `WS /ws/detections`
-- Pipeline envia emoções: `WS /ws/emotions`
-- Dashboard pode conectar para receber atualizações em tempo real
-
-### Banco de Dados
-- Pipeline salva localmente: `bioface.db` (host)
-- API acessa via volume: `./bioface.db:/app/bioface.db`
-
----
-
-## ✅ Vantagens
-
-1. **Funciona no Windows**: Câmera acessível sem workarounds
-2. **Deploy Fácil**: API/Dashboard em containers
-3. **Baixa Latência**: Processamento local
-4. **Escalável**: Múltiplas câmeras → mesma API
-5. **Flexível**: Pode rodar standalone ou conectado
-
----
-
-## 📝 Notas
-
-- **Banco de Dados**: Compartilhado via volume Docker
-- **Rede**: Containers na mesma rede Docker (`bioface-network`)
-- **Portas**: 
-  - API: `8000`
-  - Dashboard: `8501`
-- **Performance**: WebSocket não bloqueia pipeline (assíncrono)
-
----
-
-**Última atualização:** 2026-02-17
-

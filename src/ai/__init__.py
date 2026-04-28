@@ -17,6 +17,14 @@ except ImportError:
 # Importação do EmotionClassifierLight (não requer TensorFlow)
 from .emotion_classifier_light import EmotionClassifierLight
 
+# Importação do EmotionClassifierONNX (não requer TensorFlow, usa onnxruntime)
+try:
+    from .emotion_classifier_onnx import EmotionClassifierONNX
+    HAS_ONNX = True
+except ImportError:
+    EmotionClassifierONNX = None
+    HAS_ONNX = False
+
 # Importação do EmotionClassifierDeepFace (requer DeepFace)
 try:
     from .emotion_classifier_deepface import EmotionClassifierDeepFace

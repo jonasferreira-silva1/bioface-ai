@@ -54,7 +54,7 @@ logs/
 .ipynb_checkpoints/
 *.ipynb
 
-# Modelos de IA (podem ser grandes)
+# Modelos de IA (arquivos grandes — baixados automaticamente em runtime)
 models/*.h5
 models/*.pb
 models/*.pkl
@@ -62,6 +62,8 @@ models/*.pt
 models/*.onnx
 models/checkpoints/
 models/weights/
+# Mantém a pasta no repo
+!models/.gitkeep
 
 # Dados de treinamento
 data/raw/

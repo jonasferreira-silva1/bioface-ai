@@ -1,11 +1,11 @@
 """
-Ponto de entrada para versão leve do BioFace AI.
+Ponto de entrada para a versão leve do BioFace AI.
 
-Esta versão não requer TensorFlow e consome muito menos memória.
-"""
+Não requer TensorFlow. Usa MediaPipe + ONNX para detecção facial e emoções.
 
-"""
-Ponto de entrada para versão leve do BioFace AI.
+Uso:
+    python main-light.py
+    python main-light.py --api-url http://localhost:8000
 """
 
 from src.main_light import main

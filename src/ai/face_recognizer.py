@@ -10,6 +10,10 @@ import numpy as np
 from typing import Optional, List, Tuple
 import mediapipe as mp
 
+from ..exceptions import (
+    EmbeddingGenerationError,
+    FaceNotDetectedError
+)
 from ..utils.logger import get_logger
 from ..utils.config import get_settings
 

@@ -1,46 +1,52 @@
-# BioFace AI - Dockerfile para API
-# 
-# Container apenas para API FastAPI (sem câmera)
-# 
-# Build:
-#   docker build -f Dockerfile.api -t bioface-api .
+# ─────────────────────────────────────────────────────────────────────────────
+# BioFace AI — API (FastAPI + Uvicorn)
 #
-# Run:
-#   docker run -it --rm -p 8000:8000 bioface-api
+# Responsabilidade: expor endpoints REST e WebSocket para o pipeline de câmera
+# e para o Dashboard. Não acessa câmera nem processa vídeo.
+#
+# Build:  docker build -f Dockerfile.api -t bioface-api .
+# Run:    docker run -p 8000:8000 bioface-api
+# ─────────────────────────────────────────────────────────────────────────────
 
-FROM python:3.11-slim
-
-LABEL maintainer="BioFace AI Team"
-LABEL description="BioFace AI - API FastAPI"
-LABEL version="1.0.0"
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+# ── Estágio 1: dependências ───────────────────────────────────────────────────
+FROM python:3.11-slim AS deps
 
 WORKDIR /app
 
-# Instala dependências do sistema (mínimas, sem OpenGL/câmera)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copia requirements (sem OpenCV para câmera)
 COPY requirements-api.txt .
-
-# Instala dependências Python
-RUN pip install --upgrade pip setuptools wheel && \
+RUN pip install --upgrade pip --quiet && \
     pip install --no-cache-dir -r requirements-api.txt
 
-# Copia código da API
-COPY src/api/ /app/src/api/
-COPY src/database/ /app/src/database/
-COPY src/utils/ /app/src/utils/
-COPY src/exceptions.py /app/src/
-COPY run_api.py /app/
+# ── Estágio 2: imagem final ───────────────────────────────────────────────────
+FROM python:3.11-slim AS final
 
-# Cria diretórios
+LABEL org.opencontainers.image.title="BioFace AI — API"
+LABEL org.opencontainers.image.description="REST API + WebSocket para o sistema de reconhecimento facial"
+LABEL org.opencontainers.image.version="1.0.0"
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+# Copia apenas o necessário do estágio de deps
+COPY --from=deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=deps /usr/local/bin /usr/local/bin
+COPY --from=deps /usr/bin/curl /usr/bin/curl
+
+# Copia código-fonte da API e dependências internas
+COPY src/api/        /app/src/api/
+COPY src/database/   /app/src/database/
+COPY src/utils/      /app/src/utils/
+COPY src/exceptions.py /app/src/
+COPY src/__init__.py   /app/src/
+COPY run_api.py        /app/
+
+# Cria diretórios de runtime e usuário sem privilégios
 RUN mkdir -p /app/logs && \
     useradd -m -u 1000 bioface && \
     chown -R bioface:bioface /app
@@ -49,5 +55,7 @@ USER bioface
 
 EXPOSE 8000
 
-CMD ["python", "run_api.py"]
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health || exit 1
 
+CMD ["python", "run_api.py"]

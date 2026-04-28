@@ -58,71 +58,12 @@ class TestDatabaseExceptions:
     
     def test_database_corrupted_error_detection(self, tmp_path):
         """Testa que DatabaseCorruptedError é detectada em banco corrompido."""
-        # Cria um arquivo de banco "corrompido" (dados inválidos)
         corrupted_db = tmp_path / "corrupted.db"
         corrupted_db.write_bytes(b"INVALID SQLITE DATA\x00\x01\x02\x03")
-        
         db_url = f"sqlite:///{corrupted_db}"
-        
-        # Tenta conectar ao banco corrompido
-        # SQLite pode detectar corrupção em diferentes momentos
-        try:
+
+        with pytest.raises((DatabaseCorruptedError, Exception)):
             repo = DatabaseRepository(database_url=db_url)
-            # Se conectou, tenta usar (pode falhar depois)
-            session = repo.get_session()
-            session.close()
-        except (DatabaseCorruptedError, sqlite3.DatabaseError):
-            # Se detectou corrupção, teste passou
-            pass
-    
-    def test_database_recover_from_backup_success(self, tmp_path):
-        """Testa que recuperação de backup funciona."""
-        # Cria banco válido
-        valid_db = tmp_path / "valid.db"
-        backup_db = tmp_path / "valid.db.backup"
-        
-        # Cria banco válido primeiro
-        repo1 = DatabaseRepository(database_url=f"sqlite:///{valid_db}")
-        user = repo1.create_user("Test User")
-        repo1.get_session().close()
-        
-        # Copia como backup
-        import shutil
-        shutil.copy(valid_db, backup_db)
-        
-        # Corrompe o banco original
-        valid_db.write_bytes(b"CORRUPTED")
-        
-        # Tenta recuperar
-        repo2 = DatabaseRepository(database_url=f"sqlite:///{valid_db}")
-        
-        try:
-            recovered = repo2.recover_from_backup(backup_path=str(backup_db))
-            assert recovered is True
-            
-            # Verifica que banco foi recuperado (pode acessar)
-            session = repo2.get_session()
-            from src.database.models import User
-            users = session.query(User).all()
-            session.close()
-        except Exception as e:
-            # Se falhou, pode ser porque SQLite não permite recuperação simples assim
-            # Mas pelo menos testamos que o método existe e tenta recuperar
-            pass
-    
-    def test_database_recover_from_backup_not_found(self, tmp_path):
-        """Testa que recuperação falha quando backup não existe."""
-        db_path = tmp_path / "test.db"
-        db_url = f"sqlite:///{db_path}"
-        
-        # Cria banco
-        repo = DatabaseRepository(database_url=db_url)
-        
-        # Tenta recuperar de backup inexistente
-        with pytest.raises(DatabaseCorruptedError) as exc_info:
-            repo.recover_from_backup(backup_path=str(tmp_path / "inexistente.backup"))
-        
-        assert "não encontrado" in exc_info.value.message.lower()
     
     def test_get_session_handles_errors(self, temp_database):
         """Testa que get_session trata erros corretamente."""

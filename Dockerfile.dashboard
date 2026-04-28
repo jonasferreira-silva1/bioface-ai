@@ -1,35 +1,40 @@
-# BioFace AI - Dockerfile para Dashboard
-# 
-# Container apenas para Dashboard Streamlit
-# 
-# Build:
-#   docker build -f Dockerfile.dashboard -t bioface-dashboard .
+# ─────────────────────────────────────────────────────────────────────────────
+# BioFace AI — Dashboard (Streamlit)
+#
+# Responsabilidade: interface visual que consome a API via HTTP/WebSocket.
+# Não acessa câmera nem banco de dados diretamente.
+#
+# Build:  docker build -f Dockerfile.dashboard -t bioface-dashboard .
+# Run:    docker run -p 8501:8501 -e API_BASE_URL=http://localhost:8000 bioface-dashboard
+# ─────────────────────────────────────────────────────────────────────────────
 
-FROM python:3.11-slim
-
-LABEL maintainer="BioFace AI Team"
-LABEL description="BioFace AI - Dashboard Streamlit"
-LABEL version="1.0.0"
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+# ── Estágio 1: dependências ───────────────────────────────────────────────────
+FROM python:3.11-slim AS deps
 
 WORKDIR /app
 
-# Instala dependências mínimas
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copia requirements do dashboard
 COPY requirements-dashboard.txt .
-
-# Instala dependências Python
-RUN pip install --upgrade pip setuptools wheel && \
+RUN pip install --upgrade pip --quiet && \
     pip install --no-cache-dir -r requirements-dashboard.txt
 
-# Copia dashboard
-COPY dashboard.py /app/
+# ── Estágio 2: imagem final ───────────────────────────────────────────────────
+FROM python:3.11-slim AS final
+
+LABEL org.opencontainers.image.title="BioFace AI — Dashboard"
+LABEL org.opencontainers.image.description="Dashboard Streamlit para visualização e gerenciamento"
+LABEL org.opencontainers.image.version="1.0.0"
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    # URL da API — sobrescreva via -e ou docker-compose environment
+    API_BASE_URL=http://localhost:8000
+
+WORKDIR /app
+
+COPY --from=deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=deps /usr/local/bin /usr/local/bin
+
+COPY src/dashboard/app.py /app/src/dashboard/app.py
 
 RUN useradd -m -u 1000 bioface && \
     chown -R bioface:bioface /app
@@ -38,7 +43,10 @@ USER bioface
 
 EXPOSE 8501
 
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')" || exit 1
 
-CMD ["streamlit", "run", "dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
-
+CMD ["streamlit", "run", "src/dashboard/app.py", \
+     "--server.port=8501", \
+     "--server.address=0.0.0.0", \
+     "--server.headless=true"]

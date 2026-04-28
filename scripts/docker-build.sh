@@ -1,47 +1,63 @@
 #!/bin/bash
-# Script para build da imagem Docker do BioFace AI
+# ─────────────────────────────────────────────────────────────────────────────
+# BioFace AI — Build dos containers Docker (Linux/Mac)
+#
+# Uso:
+#   ./scripts/docker-build.sh           (builda API + Dashboard)
+#   ./scripts/docker-build.sh api        (só API)
+#   ./scripts/docker-build.sh dashboard  (só Dashboard)
+# ─────────────────────────────────────────────────────────────────────────────
 
 set -e
 
-echo "🐳 Building BioFace AI Docker Image..."
+echo ""
+echo " BioFace AI - Docker Build"
+echo " ─────────────────────────"
 echo ""
 
-# Verifica se Docker está instalado
 if ! command -v docker &> /dev/null; then
-    echo "❌ Docker não está instalado!"
-    echo "   Instale Docker: https://www.docker.com/get-started"
+    echo " ERRO: Docker não encontrado."
+    echo " Instale: https://docs.docker.com/get-docker/"
     exit 1
 fi
 
-# Opções
-BUILD_TYPE="${1:-cpu}"  # cpu ou gpu
-IMAGE_NAME="bioface-ai"
-TAG="${2:-latest}"
+TARGET="${1:-all}"
 
-case $BUILD_TYPE in
-    cpu)
-        echo "📦 Building CPU image..."
-        docker build -t ${IMAGE_NAME}:${TAG} .
-        echo "✅ Build concluído: ${IMAGE_NAME}:${TAG}"
-        ;;
-    gpu)
-        echo "📦 Building GPU image..."
-        docker build -f Dockerfile.gpu -t ${IMAGE_NAME}:gpu-${TAG} .
-        echo "✅ Build concluído: ${IMAGE_NAME}:gpu-${TAG}"
-        ;;
+build_api() {
+    echo " [1/2] Buildando API (FastAPI)..."
+    docker build -f Dockerfile.api -t bioface-api:latest .
+    echo " OK - bioface-api:latest"
+    echo ""
+}
+
+build_dashboard() {
+    echo " [2/2] Buildando Dashboard (Streamlit)..."
+    docker build -f Dockerfile.dashboard -t bioface-dashboard:latest .
+    echo " OK - bioface-dashboard:latest"
+    echo ""
+}
+
+case "$TARGET" in
+    api)       build_api ;;
+    dashboard) build_dashboard ;;
+    all)       build_api; build_dashboard ;;
     *)
-        echo "❌ Tipo inválido: $BUILD_TYPE"
-        echo "   Use: cpu ou gpu"
+        echo " ERRO: opção inválida '$TARGET'"
+        echo " Use: api, dashboard ou deixe em branco para buildar tudo."
         exit 1
         ;;
 esac
 
 echo ""
-echo "🚀 Para executar:"
-if [ "$BUILD_TYPE" = "cpu" ]; then
-    echo "   docker run -it --rm --device=/dev/video0 ${IMAGE_NAME}:${TAG}"
-else
-    echo "   docker run -it --rm --gpus all --device=/dev/video0 ${IMAGE_NAME}:gpu-${TAG}"
-fi
-
-
+echo " Build concluído!"
+echo ""
+echo " Para subir os serviços:"
+echo "   docker-compose up"
+echo ""
+echo " Para rodar o pipeline de câmera (em outro terminal):"
+echo "   python main-light.py --api-url http://localhost:8000"
+echo ""
+echo " Acesse:"
+echo "   API docs  → http://localhost:8000/docs"
+echo "   Dashboard → http://localhost:8501"
+echo ""

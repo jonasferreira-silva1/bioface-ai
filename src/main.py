@@ -1,13 +1,15 @@
 """
-BioFace AI - Pipeline Principal
+BioFace AI - Pipeline com DeepFace (EXPERIMENTAL)
 
-Este é o ponto de entrada principal do sistema. Integra todas as camadas:
-- Captura de vídeo
-- Detecção de faces
-- Classificação de emoções
-- Visualização em tempo real
+⚠️  ATENÇÃO: Este módulo requer DeepFace + TensorFlow instalados.
+    Para uso normal, utilize src/main_light.py que roda sem TensorFlow.
 
-Execute este arquivo para iniciar o sistema.
+    Instalação das dependências extras:
+        pip install deepface tensorflow
+
+    Este pipeline usa EmotionClassifier baseado em DeepFace/TensorFlow
+    em vez do classificador ONNX leve. Útil para comparação de precisão,
+    mas consome ~2-4x mais memória e é mais lento.
 """
 
 import cv2
