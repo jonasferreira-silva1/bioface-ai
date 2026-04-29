@@ -1,8 +1,12 @@
 # BioFace AI
 
-**Sistema de reconhecimento facial offline para controle de acesso e análise de presença — sem cloud, sem API externa, sem custo recorrente.**
+**Análise comportamental em tempo real via reconhecimento facial e detecção de emoções — offline, sem cloud, sem custo recorrente.**
 
-Identifica pessoas cadastradas em tempo real via webcam, detecta emoções e registra tudo em banco de dados local. Ideal para controle de ponto, acesso a ambientes, monitoramento de presença e pesquisa em visão computacional.
+![BioFace AI Demo](docs/demo.gif)
+
+Empresas pagam caro para saber como pessoas reagem. Nielsen cobra por pesquisa de gôndola. Consultorias de UX cobram por teste de usabilidade. Plataformas de e-learning não sabem se o aluno entendeu ou só ficou olhando para a tela.
+
+O BioFace AI resolve isso com uma webcam comum e código aberto: identifica quem está presente, detecta o que está sentindo e registra tudo localmente — sem enviar um pixel para fora do seu servidor.
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -10,15 +14,39 @@ Identifica pessoas cadastradas em tempo real via webcam, detecta emoções e reg
 
 ---
 
-## Por que BioFace AI?
+## Aplicações reais com mercado
+
+### RH e Treinamentos Corporativos
+Integre no onboarding ou em treinamentos e transforme percepção em dado.
+"Quantos funcionários ficaram confusos nessa parte?" deixa de ser opinião e vira métrica — sem interromper ninguém, sem formulário, sem viés de resposta.
+
+### Educação
+O professor recebe um relatório pós-aula: *"30% dos alunos demonstraram confusão entre 14h e 14h20"*.
+Sem câmera invasiva, sem interrupção, sem perguntar nada. A expressão fala sozinha.
+
+### UX Research
+Teste a reação emocional de usuários a interfaces, protótipos e produtos físicos sem precisar perguntar como se sentiram.
+O rosto registra o que a resposta de formulário esconde.
+
+### Varejo e PDV
+Meça a reação de clientes a gôndolas, embalagens e promoções em tempo real.
+É exatamente o que empresas como Nielsen cobram caro para fazer — aqui é open-source, roda no seu hardware e os dados ficam com você.
+
+### Controle de Acesso e Presença
+Reconhecimento facial para controle de ponto, acesso a ambientes e monitoramento de presença — sem cartão, sem senha, sem fricção.
+
+---
+
+## Por que não usar uma API de nuvem?
 
 | | BioFace AI | APIs de nuvem (AWS Rekognition, Azure Face) |
 |--|--|--|
-| Custo | Gratuito | Por requisição |
-| Privacidade | Dados ficam no seu servidor | Dados enviados para terceiros |
-| Offline | Sim | Não |
-| Customizável | Código aberto | Caixa preta |
-| Latência | ~40ms local | 200ms+ (rede) |
+| Custo | Gratuito | Por requisição — escala com volume |
+| Privacidade | Dados ficam no seu servidor | Rostos e emoções enviados para terceiros |
+| Offline | Sim — funciona sem internet | Não |
+| Customizável | Código aberto, modifique o que quiser | Caixa preta |
+| Latência | ~40ms local | 200ms+ (depende da rede) |
+| LGPD / GDPR | Você controla os dados | Depende do contrato com o provedor |
 
 ---
 
@@ -48,15 +76,6 @@ Medido em CPU Intel i5, 8GB RAM, webcam 720p, iluminação normal:
 - Registra histórico de presenças e emoções em SQLite
 - Expõe API REST + WebSocket (FastAPI) para integração com outros sistemas
 - Dashboard web (Streamlit) com gráficos e gerenciamento de usuários
-
----
-
-## Casos de uso
-
-- **Controle de ponto** — registra entrada/saída de colaboradores automaticamente
-- **Acesso a ambientes** — libera porta ou catraca ao reconhecer pessoa autorizada
-- **Análise de presença** — monitora quem está presente em sala de aula ou reunião
-- **Pesquisa** — base para experimentos em visão computacional e análise comportamental
 
 ---
 
